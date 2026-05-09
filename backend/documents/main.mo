@@ -2,14 +2,15 @@
  * Quorum — Documents Canister
  *
  * Community document storage: CC&Rs, bylaws, meeting minutes, budgets.
- * Documents are stored as IPFS CIDs or on-chain blobs (board's choice).
- * Access control: public documents visible to all members, restricted to board only.
+ * Content is stored on-chain as a Blob. When ICP blob storage matures
+ * this canister will be migrated to reference asset IDs instead.
+ * Access control: AllMembers or BoardOnly visibility per document.
  */
 
 import Array     "mo:core/Array";
+import Blob      "mo:core/Blob";
 import Map       "mo:core/Map";
 import Nat       "mo:core/Nat";
-import Option    "mo:core/Option";
 import Principal "mo:core/Principal";
 import Result    "mo:core/Result";
 import Text      "mo:core/Text";
@@ -35,7 +36,21 @@ persistent actor Documents {
     title:       Text;
     category:    DocCategory;
     visibility:  Visibility;
-    cid:         Text;    // IPFS CID or "inline:<base64>" for small docs
+    content:     Blob;     // stored on-chain; migrate to ICP blob storage when available
+    mimeType:    Text;     // e.g. "application/pdf", "text/plain"
+    sizeBytes:   Nat;
+    uploadedBy:  Principal;
+    uploadedAt:  Time.Time;
+    description: Text;
+  };
+
+  public type DocumentMeta = {
+    id:          Text;
+    title:       Text;
+    category:    DocCategory;
+    visibility:  Visibility;
+    mimeType:    Text;
+    sizeBytes:   Nat;
     uploadedBy:  Principal;
     uploadedAt:  Time.Time;
     description: Text;
@@ -45,11 +60,14 @@ persistent actor Documents {
     #NotFound;
     #NotAuthorized;
     #InvalidInput: Text;
+    #TooLarge: Text;
   };
 
   // ─── Stable State ─────────────────────────────────────────────────────────────
 
   private var counter : Nat = 0;
+  // 10 MB per document — prevents a single upload from exhausting canister memory
+  private let MAX_BYTES : Nat = 10_485_760;
   private let documents = Map.empty<Text, Document>();
 
   // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -59,29 +77,50 @@ persistent actor Documents {
     "DOC_" # Nat.toText(counter)
   };
 
+  private func toMeta(d : Document) : DocumentMeta {
+    {
+      id          = d.id;
+      title       = d.title;
+      category    = d.category;
+      visibility  = d.visibility;
+      mimeType    = d.mimeType;
+      sizeBytes   = d.sizeBytes;
+      uploadedBy  = d.uploadedBy;
+      uploadedAt  = d.uploadedAt;
+      description = d.description;
+    }
+  };
+
   // ─── Upload ───────────────────────────────────────────────────────────────────
 
   public shared(msg) func uploadDocument(
     title:       Text,
     category:    DocCategory,
     visibility:  Visibility,
-    cid:         Text,
+    content:     Blob,
+    mimeType:    Text,
     description: Text
-  ) : async Result.Result<Document, Error> {
-    if (Text.size(title) == 0) return #err(#InvalidInput("title required"));
-    if (Text.size(cid)   == 0) return #err(#InvalidInput("cid required"));
+  ) : async Result.Result<DocumentMeta, Error> {
+    if (Text.size(title)    == 0) return #err(#InvalidInput("title required"));
+    if (Text.size(mimeType) == 0) return #err(#InvalidInput("mimeType required"));
+    let size = Blob.size(content);
+    if (size == 0)        return #err(#InvalidInput("content must not be empty"));
+    if (size > MAX_BYTES) return #err(#TooLarge("document exceeds 10 MB limit"));
+
     let doc : Document = {
       id          = nextId();
       title;
       category;
       visibility;
-      cid;
+      content;
+      mimeType;
+      sizeBytes   = size;
       uploadedBy  = msg.caller;
       uploadedAt  = Time.now();
       description;
     };
     Map.add(documents, Text.compare, doc.id, doc);
-    #ok(doc)
+    #ok(toMeta(doc))
   };
 
   public shared(msg) func deleteDocument(id : Text) : async Result.Result<(), Error> {
@@ -97,19 +136,34 @@ persistent actor Documents {
 
   // ─── Queries ─────────────────────────────────────────────────────────────────
 
+  /// Returns the full document including content blob.
   public query func getDocument(id : Text) : async ?Document {
     Map.get(documents, Text.compare, id)
   };
 
-  public query func getDocumentsByCategory(category : DocCategory) : async [Document] {
-    Array.filter<Document>(Map.toValueArray(documents), func(d) { d.category == category })
+  /// Returns metadata only (no content blob) — use for listing views.
+  public query func getDocumentMeta(id : Text) : async ?DocumentMeta {
+    switch (Map.get(documents, Text.compare, id)) {
+      case null  { null };
+      case (?d)  { ?toMeta(d) };
+    }
   };
 
-  public query func getAllPublicDocuments() : async [Document] {
-    Array.filter<Document>(Map.toValueArray(documents), func(d) { d.visibility == #AllMembers })
+  public query func getDocumentsByCategory(category : DocCategory) : async [DocumentMeta] {
+    Array.map<Document, DocumentMeta>(
+      Array.filter<Document>(Map.toValueArray(documents), func(d) { d.category == category }),
+      toMeta
+    )
   };
 
-  public query func getAllDocuments() : async [Document] {
-    Map.toValueArray(documents)
+  public query func getAllPublicDocumentsMeta() : async [DocumentMeta] {
+    Array.map<Document, DocumentMeta>(
+      Array.filter<Document>(Map.toValueArray(documents), func(d) { d.visibility == #AllMembers }),
+      toMeta
+    )
+  };
+
+  public query func getAllDocumentsMeta() : async [DocumentMeta] {
+    Array.map<Document, DocumentMeta>(Map.toValueArray(documents), toMeta)
   };
 };

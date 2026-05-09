@@ -11,7 +11,7 @@ Quorum puts your homeowners association on-chain — proposals, votes, dues, doc
 | **Members** | Unit registry, board roles, onboarding |
 | **Governance** | Proposals, configurable quorum thresholds, immutable vote records |
 | **Treasury** | Monthly dues, special assessments, fines, payment tracking |
-| **Documents** | CC&Rs, bylaws, meeting minutes, budgets (IPFS CID or inline) |
+| **Documents** | CC&Rs, bylaws, meeting minutes, budgets — stored on-chain as blobs |
 | **Announcements** | Board notices with priority levels and expiry |
 
 ## Architecture
@@ -60,3 +60,4 @@ cd frontend && npm run test:unit
 - [ ] Stripe integration for dues collection
 - [ ] Mobile-responsive dashboard
 - [ ] Resident portal (read-only view for renters)
+- [ ] Migrate documents canister to ICP blob storage when available
