@@ -1,0 +1,42 @@
+{
+  "version": 1,
+  "canisters": {
+    "members": {
+      "type": "motoko",
+      "main": "backend/members/main.mo"
+    },
+    "governance": {
+      "type": "motoko",
+      "main": "backend/governance/main.mo"
+    },
+    "treasury": {
+      "type": "motoko",
+      "main": "backend/treasury/main.mo"
+    },
+    "documents": {
+      "type": "motoko",
+      "main": "backend/documents/main.mo"
+    },
+    "announcements": {
+      "type": "motoko",
+      "main": "backend/announcements/main.mo"
+    },
+    "frontend": {
+      "type": "assets",
+      "source": ["frontend/dist"],
+      "dependencies": [
+        "members",
+        "governance",
+        "treasury",
+        "documents",
+        "announcements"
+      ]
+    }
+  },
+  "networks": {
+    "local": {
+      "bind": "127.0.0.1:8000",
+      "type": "ephemeral"
+    }
+  }
+}
