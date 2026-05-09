@@ -1,0 +1,114 @@
+name: Cycle Watchdog
+
+on:
+  schedule:
+    - cron: '0 */6 * * *'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Dry run — report only, no top-up'
+        required: false
+        default: false
+        type: boolean
+      network:
+        description: 'Target network'
+        required: false
+        default: 'ic'
+        type: choice
+        options: [ic, local]
+
+permissions:
+  contents: read
+
+jobs:
+  cycle-watchdog:
+    runs-on: ubuntu-latest
+    environment: production
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '20'
+
+      - name: Install icp-cli
+        run: npm install -g @icp-sdk/icp-cli
+
+      - name: Set ICP identity from secret
+        run: |
+          IDENTITY_FILE=$(mktemp /tmp/icp-identity-XXXXXX.pem)
+          printf '%s' "$DFX_IDENTITY_PEM" > "$IDENTITY_FILE"
+          icp identity import ci-watchdog --from-pem "$IDENTITY_FILE" --storage plaintext
+          icp identity default ci-watchdog
+          rm -f "$IDENTITY_FILE"
+        env:
+          DFX_IDENTITY_PEM: ${{ secrets.MAINNET_IDENTITY_PEM }}
+
+      - name: Run cycle health check
+        id: health
+        run: |
+          bash scripts/check-cycle-health.sh 2>&1 | tee cycle-health.log
+          echo "exit_code=${PIPESTATUS[0]}" >> "$GITHUB_OUTPUT"
+        env:
+          DFX_NETWORK: ${{ inputs.network || 'ic' }}
+          CRITICAL_CYCLES: '500000000'
+          WARNING_CYCLES: '1000000000000'
+        continue-on-error: true
+
+      - name: Top up low canisters
+        if: ${{ inputs.dry_run != 'true' }}
+        run: |
+          DRY_FLAG=""
+          [ "${{ inputs.dry_run }}" = "true" ] && DRY_FLAG="--dry-run"
+          bash scripts/top-up-canisters.sh $DRY_FLAG 2>&1 | tee top-up.log
+        env:
+          DFX_NETWORK: ${{ inputs.network || 'ic' }}
+          TOP_UP_TRIGGER_T: '2'
+          TOP_UP_TARGET_T: '5'
+
+      - name: Upload cycle health report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cycle-health-${{ github.run_id }}
+          path: |
+            cycle-health.log
+            top-up.log
+          retention-days: 14
+
+      - name: Post summary
+        if: always()
+        run: |
+          echo "## Cycle Watchdog Summary" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          cat cycle-health.log >> "$GITHUB_STEP_SUMMARY" 2>/dev/null || true
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Email alert on critical cycles
+        if: ${{ steps.health.outputs.exit_code != '0' && env.RESEND_API_KEY != '' }}
+        env:
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          RESEND_FROM: ${{ vars.RESEND_FROM_ADDRESS || 'noreply@quorum.app' }}
+          ALERT_EMAIL: ${{ vars.OPS_ALERT_EMAIL }}
+        run: |
+          if [ -z "$ALERT_EMAIL" ]; then
+            echo "OPS_ALERT_EMAIL not set — skipping email alert"
+            exit 0
+          fi
+          SUMMARY=$(cat cycle-health.log 2>/dev/null | tail -20 || echo "See workflow logs")
+          curl -s -X POST https://api.resend.com/emails \
+            -H "Authorization: Bearer $RESEND_API_KEY" \
+            -H "Content-Type: application/json" \
+            -d "$(jq -n \
+              --arg from    "$RESEND_FROM" \
+              --arg to      "$ALERT_EMAIL" \
+              --arg subject "🔴 Quorum: Critical canister cycle balance detected" \
+              --arg body    "Critical cycle alert fired in CI cycle-watchdog run $GITHUB_RUN_ID.\n\n$SUMMARY\n\nRun: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
+              '{from: $from, to: [$to], subject: $subject, text: $body}')"
+
+      - name: Fail if critical canisters found
+        if: ${{ steps.health.outputs.exit_code != '0' }}
+        run: |
+          echo "❌ Critical cycle balance detected — see cycle-health.log"
+          exit 1

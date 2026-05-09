@@ -15,28 +15,23 @@ jobs:
     environment: testnet
     if: github.event.workflow_run.conclusion == 'success'
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
           node-version: '20'
-          cache: 'npm'
-          cache-dependency-path: frontend/package-lock.json
 
-      - name: Install frontend dependencies
-        run: cd frontend && npm ci
+      - name: Install icp-cli
+        run: npm install -g @icp-sdk/icp-cli
 
       - name: Cache mops packages
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ~/.cache/mops
           key: mops-${{ runner.os }}-${{ hashFiles('mops.toml') }}
 
-      - name: Install mops and Motoko dependencies
-        run: |
-          npm install -g ic-mops
-          mops install
-          mops toolchain init
+      - name: Install mops
+        run: npm install -g ic-mops
 
       - name: Install dfx
         run: |
@@ -46,16 +41,28 @@ jobs:
           sudo install -m 755 "$DFX_BIN" /usr/local/bin/dfx
           dfx --version
 
-      - name: Deploy to IC
-        run: bash scripts/deploy.sh ic
+      - name: Wallet cycles pre-flight
+        run: bash scripts/check-wallet-balance.sh
         env:
           DFX_IDENTITY_PEM: ${{ secrets.DFX_IDENTITY_PEM }}
+          DFX_WALLET_ID: ${{ secrets.DFX_WALLET_ID }}
+          DFX_NETWORK: ic
+          MIN_WALLET_CYCLES: '5000000000000'
+
+      - name: Deploy to testnet
+        run: bash scripts/deploy.sh testnet
+        env:
+          DFX_IDENTITY_PEM: ${{ secrets.DFX_IDENTITY_PEM }}
+          DFX_WALLET_ID: ${{ secrets.DFX_WALLET_ID }}
+          BACKUP_CONTROLLER_PRINCIPAL: ${{ secrets.BACKUP_CONTROLLER_PRINCIPAL }}
+          STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
+          VITE_STRIPE_PUBLISHABLE_KEY: ${{ secrets.VITE_STRIPE_PUBLISHABLE_KEY }}
 
       - name: Commit canister IDs
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add canister_ids.json 2>/dev/null || true
+          git add canister_ids.json .icp/data/mappings/ 2>/dev/null || true
           if git diff --staged --quiet; then
             echo "canister IDs unchanged, nothing to commit"
           else
