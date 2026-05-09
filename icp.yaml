@@ -4,30 +4,35 @@ canisters:
       type: "@dfinity/motoko@v4.0.0"
       configuration:
         main: backend/members/main.mo
+        args: ""
 
   - name: governance
     recipe:
       type: "@dfinity/motoko@v4.0.0"
       configuration:
         main: backend/governance/main.mo
+        args: ""
 
   - name: treasury
     recipe:
       type: "@dfinity/motoko@v4.0.0"
       configuration:
         main: backend/treasury/main.mo
+        args: ""
 
   - name: documents
     recipe:
       type: "@dfinity/motoko@v4.0.0"
       configuration:
         main: backend/documents/main.mo
+        args: ""
 
   - name: announcements
     recipe:
       type: "@dfinity/motoko@v4.0.0"
       configuration:
         main: backend/announcements/main.mo
+        args: ""
 
   - name: frontend
     recipe:
@@ -46,6 +51,8 @@ networks:
   - name: testnet
     mode: connected
     url: https://ic0.app
+
+  # ic is a reserved built-in network in icp-cli (https://icp-api.io) — do not redeclare it
 
 environments:
   - name: local
