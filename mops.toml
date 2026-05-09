@@ -2,5 +2,8 @@
 name = "quorum"
 version = "0.1.0"
 
+[toolchain]
+moc = "1.3.0"
+
 [dependencies]
-core = "0.1.0"
+core = "2.3.1"

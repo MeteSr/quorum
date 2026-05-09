@@ -193,7 +193,7 @@ export default function Landing({ onLogin }: Props) {
           maxWidth: 760,
           letterSpacing: "-0.02em",
         }}>
-          Your community,<br />governed on-chain.
+          Every decision.<br />On the record.
         </h1>
 
         <p style={{
@@ -401,7 +401,7 @@ export default function Landing({ onLogin }: Props) {
             marginTop: "0.5rem",
             letterSpacing: "-0.02em",
           }}>
-            One community. One price.
+            Priced by community size.
           </h2>
           <p style={{
             fontFamily: S.sans,
@@ -410,37 +410,59 @@ export default function Landing({ onLogin }: Props) {
             color: S.inkLight,
             marginTop: "0.5rem",
           }}>
-            No per-seat pricing. No feature gating. One flat fee covers your entire HOA.
+            No per-seat pricing. No feature gating. One flat fee covers your entire HOA —
+            from 100 to 3,000 units.
           </p>
         </div>
 
         <div style={{
           display: "grid",
-          gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))",
+          gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
           gap: "1rem",
         }}>
           {[
             {
               tier:  "Starter",
-              price: "$49",
+              units: "≤ 100 units",
+              price: "$79",
               per:   "per community / month",
-              features: ["Up to 50 units", "Governance & voting", "Treasury & dues", "Document vault", "Announcements"],
+              features: ["Governance & voting", "Treasury & dues", "Document vault", "Announcements", "Invite-code onboarding"],
+              cta:   "Get started",
+              highlight: false,
+            },
+            {
+              tier:  "Standard",
+              units: "≤ 300 units",
+              price: "$119",
+              per:   "per community / month",
+              features: ["Everything in Starter", "Priority support", "Audit export", "Board role management", "Meeting minutes vault"],
               cta:   "Get started",
               highlight: false,
             },
             {
               tier:  "Community",
-              price: "$99",
+              units: "≤ 600 units",
+              price: "$159",
               per:   "per community / month",
-              features: ["Up to 250 units", "Everything in Starter", "Priority support", "Custom domain", "Audit export"],
+              features: ["Everything in Standard", "Multiple sub-communities", "Custom domain", "Advanced treasury reports", "API access"],
               cta:   "Get started",
               highlight: true,
             },
             {
+              tier:  "Professional",
+              units: "≤ 1,500 units",
+              price: "$249",
+              per:   "per community / month",
+              features: ["Everything in Community", "Dedicated canister", "White-labelling", "SLA 99.9%", "Onboarding support"],
+              cta:   "Get started",
+              highlight: false,
+            },
+            {
               tier:  "Enterprise",
-              price: "Custom",
-              per:   "contact us",
-              features: ["Unlimited units", "White-labelling", "Dedicated canister", "SLA", "Onboarding support"],
+              units: "≤ 3,000 units",
+              price: "$399",
+              per:   "per community / month",
+              features: ["Everything in Professional", "vs AppFolio ~$4,200/mo", "10× cheaper at scale", "Custom integrations", "Dedicated account manager"],
               cta:   "Contact us",
               highlight: false,
             },
@@ -473,9 +495,18 @@ export default function Landing({ onLogin }: Props) {
                 letterSpacing: "0.1em",
                 textTransform: "uppercase" as const,
                 color: plan.highlight ? "rgba(255,255,255,0.5)" : S.inkLight,
-                marginBottom: "0.75rem",
+                marginBottom: "0.25rem",
               }}>
                 {plan.tier}
+              </div>
+              <div style={{
+                fontFamily: S.mono,
+                fontSize: "0.6rem",
+                letterSpacing: "0.06em",
+                color: plan.highlight ? "rgba(255,255,255,0.35)" : S.inkLight,
+                marginBottom: "0.6rem",
+              }}>
+                {(plan as any).units}
               </div>
               <div style={{
                 fontFamily: S.serif,
