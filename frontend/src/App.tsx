@@ -2,9 +2,12 @@ import { useState } from "react";
 
 const S = {
   ink:      "#0E0E0C",
-  paper:    "#F7F6F2",
+  paper:    "#F9F6F0",
   rule:     "#C8C3B8",
-  accent:   "#2563EB",   // Quorum blue
+  navy:     "#1B2D4F",
+  sage:     "#5A8C58",
+  sageText: "#3A6638",
+  amber:    "#D4860A",
   inkLight: "#7A7268",
   mono:     "'IBM Plex Mono', monospace",
   sans:     "'IBM Plex Sans', system-ui, sans-serif",
@@ -24,7 +27,7 @@ export default function App() {
         alignItems: "center",
         gap: "2rem",
         height: 56,
-        background: S.ink,
+        background: S.navy,
         color: S.paper,
       }}>
         <span style={{ fontFamily: S.mono, fontSize: "0.8rem", letterSpacing: "0.12em", fontWeight: 700 }}>

@@ -7,9 +7,9 @@
  */
 
 import Array     "mo:core/Array";
+import Iter      "mo:core/Iter";
 import Map       "mo:core/Map";
 import Nat       "mo:core/Nat";
-import Option    "mo:core/Option";
 import Principal "mo:core/Principal";
 import Result    "mo:core/Result";
 import Text      "mo:core/Text";
@@ -121,15 +121,15 @@ persistent actor Treasury {
   };
 
   public query func getAssessmentsForUnit(unitId : Text) : async [Assessment] {
-    Array.filter<Assessment>(Map.toValueArray(assessments), func(a) { a.unitId == unitId })
+    Array.filter<Assessment>(Iter.toArray(Map.values(assessments)), func(a) { a.unitId == unitId })
   };
 
   public query func getOutstandingAssessments() : async [Assessment] {
-    Array.filter<Assessment>(Map.toValueArray(assessments), func(a) { a.status == #Outstanding })
+    Array.filter<Assessment>(Iter.toArray(Map.values(assessments)), func(a) { a.status == #Outstanding })
   };
 
   public query func getTotalOutstandingCents() : async Nat {
-    let outstanding = Array.filter<Assessment>(Map.toValueArray(assessments), func(a) { a.status == #Outstanding });
+    let outstanding = Array.filter<Assessment>(Iter.toArray(Map.values(assessments)), func(a) { a.status == #Outstanding });
     Array.foldLeft<Assessment, Nat>(outstanding, 0, func(acc, a) { acc + a.amountCents })
   };
 };
