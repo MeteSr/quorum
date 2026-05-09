@@ -1,0 +1,39 @@
+name: Deploy Mainnet
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '20'
+
+      - name: Install icp-cli
+        run: npm install -g @icp-sdk/icp-cli
+
+      - name: Install mops
+        run: npm install -g ic-mops
+
+      - name: Deploy to mainnet
+        run: bash scripts/deploy.sh ic
+        env:
+          DFX_IDENTITY_PEM: ${{ secrets.MAINNET_IDENTITY_PEM }}
+          STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
+          VITE_STRIPE_PUBLISHABLE_KEY: ${{ secrets.VITE_STRIPE_PUBLISHABLE_KEY }}
+          BACKUP_CONTROLLER_PRINCIPAL: ${{ secrets.BACKUP_CONTROLLER_PRINCIPAL }}
+
+      - name: Post-deploy cycle health gate
+        run: bash scripts/check-cycle-health.sh
+        env:
+          DFX_NETWORK: ic
+          CRITICAL_CYCLES: '500000000'
+          WARNING_CYCLES: '1000000000000'

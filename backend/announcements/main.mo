@@ -7,9 +7,9 @@
  */
 
 import Array     "mo:core/Array";
+import Iter      "mo:core/Iter";
 import Map       "mo:core/Map";
 import Nat       "mo:core/Nat";
-import Option    "mo:core/Option";
 import Principal "mo:core/Principal";
 import Result    "mo:core/Result";
 import Text      "mo:core/Text";
@@ -77,7 +77,7 @@ persistent actor Announcements {
       case null  { #err(#NotFound) };
       case (?a)  {
         if (a.postedBy != msg.caller) return #err(#NotAuthorized);
-        Map.delete(announcements, Text.compare, id);
+        ignore Map.remove(announcements, Text.compare, id);
         #ok(())
       };
     }
@@ -91,7 +91,7 @@ persistent actor Announcements {
 
   public query func getActive() : async [Announcement] {
     let now = Time.now();
-    Array.filter<Announcement>(Map.toValueArray(announcements), func(a) {
+    Array.filter<Announcement>(Iter.toArray(Map.values(announcements)), func(a) {
       switch (a.expiresAt) {
         case null     { true };
         case (?expiry){ now < expiry };
@@ -101,7 +101,7 @@ persistent actor Announcements {
 
   public query func getUrgent() : async [Announcement] {
     let now = Time.now();
-    Array.filter<Announcement>(Map.toValueArray(announcements), func(a) {
+    Array.filter<Announcement>(Iter.toArray(Map.values(announcements)), func(a) {
       a.priority == #Urgent and (
         switch (a.expiresAt) {
           case null     { true };
@@ -112,6 +112,6 @@ persistent actor Announcements {
   };
 
   public query func getAll() : async [Announcement] {
-    Map.toValueArray(announcements)
+    Iter.toArray(Map.values(announcements))
   };
 };

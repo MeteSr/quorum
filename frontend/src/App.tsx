@@ -1,10 +1,14 @@
 import { useState } from "react";
+import Landing from "./Landing";
 
 const S = {
   ink:      "#0E0E0C",
-  paper:    "#F7F6F2",
+  paper:    "#F9F6F0",
   rule:     "#C8C3B8",
-  accent:   "#2563EB",   // Quorum blue
+  navy:     "#1B2D4F",
+  sage:     "#5A8C58",
+  sageText: "#3A6638",
+  amber:    "#D4860A",
   inkLight: "#7A7268",
   mono:     "'IBM Plex Mono', monospace",
   sans:     "'IBM Plex Sans', system-ui, sans-serif",
@@ -13,7 +17,12 @@ const S = {
 type Tab = "dashboard" | "proposals" | "treasury" | "documents" | "announcements";
 
 export default function App() {
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [tab, setTab] = useState<Tab>("dashboard");
+
+  if (!isLoggedIn) {
+    return <Landing onLogin={() => setIsLoggedIn(true)} />;
+  }
 
   return (
     <div style={{ display: "flex", flexDirection: "column", minHeight: "100vh", background: S.paper }}>
@@ -24,7 +33,7 @@ export default function App() {
         alignItems: "center",
         gap: "2rem",
         height: 56,
-        background: S.ink,
+        background: S.navy,
         color: S.paper,
       }}>
         <span style={{ fontFamily: S.mono, fontSize: "0.8rem", letterSpacing: "0.12em", fontWeight: 700 }}>
@@ -52,13 +61,30 @@ export default function App() {
             </button>
           ))}
         </nav>
+        <button
+          onClick={() => setIsLoggedIn(false)}
+          style={{
+            marginLeft: "2rem",
+            background: "none",
+            border: "1px solid rgba(255,255,255,0.2)",
+            color: "rgba(255,255,255,0.55)",
+            fontFamily: S.mono,
+            fontSize: "0.58rem",
+            letterSpacing: "0.1em",
+            textTransform: "uppercase",
+            padding: "0.3rem 0.75rem",
+            cursor: "pointer",
+          }}
+        >
+          Sign out
+        </button>
       </header>
 
       <main style={{ flex: 1, padding: "2.5rem 2rem", maxWidth: 960, margin: "0 auto", width: "100%" }}>
         {tab === "dashboard"     && <Dashboard />}
-        {tab === "proposals"     && <Placeholder title="Proposals" description="Active votes and governance history" />}
-        {tab === "treasury"      && <Placeholder title="Treasury"  description="Dues, assessments, and financial records" />}
-        {tab === "documents"     && <Placeholder title="Documents" description="CC&Rs, bylaws, meeting minutes, and budgets" />}
+        {tab === "proposals"     && <Placeholder title="Proposals"     description="Active votes and governance history" />}
+        {tab === "treasury"      && <Placeholder title="Treasury"      description="Dues, assessments, and financial records" />}
+        {tab === "documents"     && <Placeholder title="Documents"     description="CC&Rs, bylaws, meeting minutes, and budgets" />}
         {tab === "announcements" && <Placeholder title="Announcements" description="Community notices and alerts" />}
       </main>
     </div>
@@ -68,7 +94,7 @@ export default function App() {
 function Dashboard() {
   return (
     <div>
-      <h1 style={{ fontFamily: "'Georgia', serif", fontWeight: 900, fontSize: "2rem", marginBottom: "0.25rem" }}>
+      <h1 style={{ fontFamily: "'Playfair Display', Georgia, serif", fontWeight: 900, fontSize: "2rem", marginBottom: "0.25rem" }}>
         Good morning, Homeowner.
       </h1>
       <p style={{ color: S.inkLight, fontFamily: S.sans, fontSize: "0.9rem", marginBottom: "2rem" }}>
@@ -77,19 +103,15 @@ function Dashboard() {
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "1rem" }}>
         {[
-          { label: "Open Proposals",     value: "2"     },
-          { label: "Outstanding Dues",   value: "$0.00" },
-          { label: "Unread Notices",     value: "1"     },
+          { label: "Open Proposals",   value: "2"     },
+          { label: "Outstanding Dues", value: "$0.00" },
+          { label: "Unread Notices",   value: "1"     },
         ].map((card) => (
-          <div key={card.label} style={{
-            border: `1px solid ${S.rule}`,
-            padding: "1.5rem",
-            background: "#fff",
-          }}>
+          <div key={card.label} style={{ border: `1px solid ${S.rule}`, padding: "1.5rem", background: "#fff" }}>
             <div style={{ fontFamily: S.mono, fontSize: "0.65rem", letterSpacing: "0.1em", color: S.inkLight, textTransform: "uppercase", marginBottom: "0.5rem" }}>
               {card.label}
             </div>
-            <div style={{ fontFamily: "'Georgia', serif", fontSize: "2rem", fontWeight: 700 }}>
+            <div style={{ fontFamily: "'Playfair Display', Georgia, serif", fontSize: "2rem", fontWeight: 700 }}>
               {card.value}
             </div>
           </div>
@@ -102,7 +124,7 @@ function Dashboard() {
 function Placeholder({ title, description }: { title: string; description: string }) {
   return (
     <div>
-      <h1 style={{ fontFamily: "'Georgia', serif", fontWeight: 900, fontSize: "2rem", marginBottom: "0.25rem" }}>
+      <h1 style={{ fontFamily: "'Playfair Display', Georgia, serif", fontWeight: 900, fontSize: "2rem", marginBottom: "0.25rem" }}>
         {title}
       </h1>
       <p style={{ color: S.inkLight, fontFamily: S.sans, fontSize: "0.9rem" }}>{description}</p>

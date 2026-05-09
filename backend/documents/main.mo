@@ -9,6 +9,7 @@
 
 import Array     "mo:core/Array";
 import Blob      "mo:core/Blob";
+import Iter      "mo:core/Iter";
 import Map       "mo:core/Map";
 import Nat       "mo:core/Nat";
 import Principal "mo:core/Principal";
@@ -128,7 +129,7 @@ persistent actor Documents {
       case null  { #err(#NotFound) };
       case (?d)  {
         if (d.uploadedBy != msg.caller) return #err(#NotAuthorized);
-        Map.delete(documents, Text.compare, id);
+        ignore Map.remove(documents, Text.compare, id);
         #ok(())
       };
     }
@@ -151,19 +152,19 @@ persistent actor Documents {
 
   public query func getDocumentsByCategory(category : DocCategory) : async [DocumentMeta] {
     Array.map<Document, DocumentMeta>(
-      Array.filter<Document>(Map.toValueArray(documents), func(d) { d.category == category }),
+      Array.filter<Document>(Iter.toArray(Map.values(documents)), func(d) { d.category == category }),
       toMeta
     )
   };
 
   public query func getAllPublicDocumentsMeta() : async [DocumentMeta] {
     Array.map<Document, DocumentMeta>(
-      Array.filter<Document>(Map.toValueArray(documents), func(d) { d.visibility == #AllMembers }),
+      Array.filter<Document>(Iter.toArray(Map.values(documents)), func(d) { d.visibility == #AllMembers }),
       toMeta
     )
   };
 
   public query func getAllDocumentsMeta() : async [DocumentMeta] {
-    Array.map<Document, DocumentMeta>(Map.toValueArray(documents), toMeta)
+    Array.map<Document, DocumentMeta>(Iter.toArray(Map.values(documents)), toMeta)
   };
 };

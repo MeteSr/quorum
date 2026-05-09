@@ -7,9 +7,9 @@
  */
 
 import Array     "mo:core/Array";
+import Iter      "mo:core/Iter";
 import Map       "mo:core/Map";
 import Nat       "mo:core/Nat";
-import Option    "mo:core/Option";
 import Principal "mo:core/Principal";
 import Result    "mo:core/Result";
 import Text      "mo:core/Text";
@@ -131,7 +131,7 @@ persistent actor Governance {
         if (p.status != #Open)            return #err(#NotOpen);
         if (Time.now() > p.votingDeadline) return #err(#DeadlinePassed);
         let key = voteKey(proposalId, msg.caller);
-        if (Map.contains(votes, Text.compare, key)) return #err(#AlreadyVoted);
+        if (Map.get(votes, Text.compare, key) != null) return #err(#AlreadyVoted);
 
         let vote : Vote = {
           proposalId;
@@ -173,11 +173,11 @@ persistent actor Governance {
   };
 
   public query func getOpenProposals() : async [Proposal] {
-    Array.filter<Proposal>(Map.toValueArray(proposals), func(p) { p.status == #Open })
+    Array.filter<Proposal>(Iter.toArray(Map.values(proposals)), func(p) { p.status == #Open })
   };
 
   public query func getAllProposals() : async [Proposal] {
-    Map.toValueArray(proposals)
+    Iter.toArray(Map.values(proposals))
   };
 
   public query func getMyVote(proposalId : Text, voter : Principal) : async ?Vote {
