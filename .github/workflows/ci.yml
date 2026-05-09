@@ -1,0 +1,105 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  # ── Motoko compile check ───────────────────────────────────────────────────
+  motoko-check:
+    name: Motoko compile check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Cache mops packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/mops
+          key: mops-${{ runner.os }}-${{ hashFiles('mops.toml') }}
+
+      - name: Install mops
+        run: npm install -g ic-mops
+
+      - name: Install Motoko dependencies
+        run: mops install
+
+      - name: Initialize mops toolchain (downloads moc)
+        run: |
+          mops toolchain init
+          MOC_BIN=$(mops toolchain bin moc 2>/dev/null) || MOC_BIN=""
+          if [ -z "$MOC_BIN" ]; then
+            rm -rf .mops/_tmp && mops toolchain init
+            MOC_BIN=$(mops toolchain bin moc)
+          fi
+          echo "moc: $MOC_BIN"
+          "$MOC_BIN" --version
+
+      - name: Install dfx
+        run: |
+          curl -fsSL "https://github.com/dfinity/sdk/releases/download/0.24.3/dfx-x86_64-unknown-linux-gnu.tar.gz" \
+            | tar -xz
+          DFX_BIN=$(find . -name "dfx*" -type f -perm /111 | head -1)
+          sudo install -m 755 "$DFX_BIN" /usr/local/bin/dfx
+          dfx --version
+
+      - name: Start local replica
+        run: dfx start --clean --background
+
+      - name: Compile all Motoko canisters
+        run: |
+          jq -r '.canisters | to_entries[] | select(.value.type == "motoko") | .key' dfx.json \
+            | while read -r canister; do
+              echo "=== $canister ==="
+              dfx build "$canister" || exit 1
+            done
+
+  # ── Frontend: type check + unit tests + build ─────────────────────────────
+  test-frontend:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write   # post coverage comment on PRs
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        run: cd frontend && npm ci
+
+      - name: Type check
+        run: cd frontend && npx tsc --noEmit
+
+      - name: Unit tests with coverage
+        run: cd frontend && npm run test:unit:coverage
+
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: frontend/coverage/
+          retention-days: 14
+
+      - name: Post coverage comment on PR
+        if: github.event_name == 'pull_request'
+        uses: davelosert/vitest-coverage-report-action@v2
+        with:
+          json-summary-path: frontend/coverage/coverage-summary.json
+          vite-config-path:  frontend/vite.config.ts
+
+      - name: Build
+        run: cd frontend && npm run build
