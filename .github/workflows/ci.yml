@@ -15,14 +15,17 @@ jobs:
     name: Motoko compile check
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
           node-version: '20'
 
+      - name: Install icp-cli
+        run: npm install -g @icp-sdk/icp-cli
+
       - name: Cache mops packages
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ~/.cache/mops
           key: mops-${{ runner.os }}-${{ hashFiles('mops.toml') }}
@@ -34,8 +37,10 @@ jobs:
         run: mops install
 
       - name: Initialize mops toolchain (downloads moc)
+        run: mops toolchain init
+
+      - name: Pre-warm moc binary
         run: |
-          mops toolchain init
           MOC_BIN=$(mops toolchain bin moc 2>/dev/null) || MOC_BIN=""
           if [ -z "$MOC_BIN" ]; then
             rm -rf .mops/_tmp && mops toolchain init
@@ -44,23 +49,28 @@ jobs:
           echo "moc: $MOC_BIN"
           "$MOC_BIN" --version
 
-      - name: Install dfx
+      - name: Install ic-wasm
         run: |
-          curl -fsSL "https://github.com/dfinity/sdk/releases/download/0.24.3/dfx-x86_64-unknown-linux-gnu.tar.gz" \
-            | tar -xz
-          DFX_BIN=$(find . -name "dfx*" -type f -perm /111 | head -1)
-          sudo install -m 755 "$DFX_BIN" /usr/local/bin/dfx
-          dfx --version
+          TMP=$(mktemp -d)
+          curl -sSfL --retry 3 --retry-delay 5 \
+            https://github.com/dfinity/ic-wasm/releases/download/0.9.11/ic-wasm-x86_64-unknown-linux-musl.tar.xz \
+            -o "$TMP/ic-wasm.tar.xz"
+          tar -xJf "$TMP/ic-wasm.tar.xz" -C "$TMP"
+          BIN=$(find "$TMP" -name "ic-wasm" -type f | head -1)
+          sudo install -m 755 "$BIN" /usr/local/bin/ic-wasm
+          rm -rf "$TMP"
+          ic-wasm --version
 
-      - name: Start local replica
-        run: dfx start --clean --background
+      - name: Start local network (needed for canister ID allocation)
+        run: icp network start -d
 
       - name: Compile all Motoko canisters
         run: |
-          jq -r '.canisters | to_entries[] | select(.value.type == "motoko") | .key' dfx.json \
+          awk '/^canisters:/{p=1;next} /^[a-z]/{p=0} p && /^  - name:/{print $3}' icp.yaml \
+            | grep -v "^frontend$" \
             | while read -r canister; do
               echo "=== $canister ==="
-              dfx build "$canister" || exit 1
+              icp build "$canister" || exit 1
             done
 
   # ── Frontend: type check + unit tests + build ─────────────────────────────
@@ -70,14 +80,14 @@ jobs:
       contents: read
       pull-requests: write   # post coverage comment on PRs
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
           node-version: '20'
 
       - name: Cache npm store
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ~/.npm
           key: npm-${{ runner.os }}-${{ hashFiles('frontend/package.json') }}

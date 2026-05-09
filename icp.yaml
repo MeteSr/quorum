@@ -1,0 +1,58 @@
+canisters:
+  - name: members
+    recipe:
+      type: "@dfinity/motoko@v4.0.0"
+      configuration:
+        main: backend/members/main.mo
+
+  - name: governance
+    recipe:
+      type: "@dfinity/motoko@v4.0.0"
+      configuration:
+        main: backend/governance/main.mo
+
+  - name: treasury
+    recipe:
+      type: "@dfinity/motoko@v4.0.0"
+      configuration:
+        main: backend/treasury/main.mo
+
+  - name: documents
+    recipe:
+      type: "@dfinity/motoko@v4.0.0"
+      configuration:
+        main: backend/documents/main.mo
+
+  - name: announcements
+    recipe:
+      type: "@dfinity/motoko@v4.0.0"
+      configuration:
+        main: backend/announcements/main.mo
+
+  - name: frontend
+    recipe:
+      type: "@dfinity/asset-canister@v2.1.0"
+      configuration:
+        dir: frontend/dist
+
+networks:
+  - name: local
+    mode: managed
+    ii: true
+    gateway:
+      bind: 127.0.0.1
+      port: 4943
+
+  - name: testnet
+    mode: connected
+    url: https://ic0.app
+
+environments:
+  - name: local
+    network: local
+
+  - name: testnet
+    network: testnet
+
+  - name: ic
+    network: ic
