@@ -2,10 +2,10 @@
  * Integration tests — maintenance canister.
  *
  * What these tests prove that unit tests cannot:
- *   - RequestPriority + RequestStatus Variant round-trips
- *   - createRequest returns a non-empty id
- *   - updateStatus transitions the status
- *   - assignRequest sets the assignedTo principal
+ *   - RequestCategory + RequestStatus Variant round-trips
+ *   - submitRequest returns a non-empty id
+ *   - updateStatus transitions the status (with required note arg)
+ *   - getMyRequests scopes to the calling principal
  *   - getOpenRequests excludes resolved requests
  */
 
@@ -25,13 +25,14 @@ async function getActor() {
   return Actor.createActor(idlFactory, { agent: await getAgent(), canisterId: CANISTER_ID });
 }
 
-describe.skipIf(!deployed)("createRequest — Candid serialization", () => {
+describe.skipIf(!deployed)("submitRequest — Candid serialization", () => {
   let request: any;
 
   beforeAll(async () => {
     const a = await getActor();
-    const result = await a.createRequest(
-      UNIT_ID, "Leaky faucet in kitchen integration test", { Medium: null }, []
+    // submitRequest(unitId, category, description, photoHashes)
+    const result = await a.submitRequest(
+      UNIT_ID, { Plumbing: null }, "Leaky faucet in kitchen integration test", []
     ) as any;
     if ("err" in result) throw new Error(JSON.stringify(result.err));
     request = result.ok;
@@ -45,8 +46,8 @@ describe.skipIf(!deployed)("createRequest — Candid serialization", () => {
     expect(request.unitId).toBe(UNIT_ID);
   });
 
-  it("priority Variant round-trips as Medium", () => {
-    expect(request.priority).toHaveProperty("Medium");
+  it("category Variant round-trips as Plumbing", () => {
+    expect(request.category).toHaveProperty("Plumbing");
   });
 
   it("status starts as Open", () => {
@@ -55,7 +56,7 @@ describe.skipIf(!deployed)("createRequest — Candid serialization", () => {
 
   it("createdAt is a BigInt nanosecond timestamp", () => {
     expect(typeof request.createdAt).toBe("bigint");
-    expect(request.createdAt).toBeGreaterThan(BigInt(1_000_000_000_000_000_000n));
+    expect(request.createdAt).toBeGreaterThan(BigInt("1000000000000000000"));
   });
 });
 
@@ -64,8 +65,8 @@ describe.skipIf(!deployed)("updateStatus — status transitions", () => {
 
   beforeAll(async () => {
     const a = await getActor();
-    const result = await a.createRequest(
-      UNIT_ID, "Broken window for status test", { High: null }, []
+    const result = await a.submitRequest(
+      UNIT_ID, { Electrical: null }, "Broken outlet for status test", []
     ) as any;
     if ("err" in result) throw new Error(JSON.stringify(result.err));
     requestId = result.ok.id;
@@ -73,14 +74,14 @@ describe.skipIf(!deployed)("updateStatus — status transitions", () => {
 
   it("transitions to InProgress", async () => {
     const a = await getActor();
-    const result = await a.updateStatus(requestId, { InProgress: null }) as any;
+    const result = await a.updateStatus(requestId, { InProgress: null }, "Starting work") as any;
     if ("err" in result) throw new Error(JSON.stringify(result.err));
     expect(result.ok.status).toHaveProperty("InProgress");
   });
 
   it("transitions to Resolved", async () => {
     const a = await getActor();
-    const result = await a.updateStatus(requestId, { Resolved: null }) as any;
+    const result = await a.updateStatus(requestId, { Resolved: null }, "Work complete") as any;
     if ("err" in result) throw new Error(JSON.stringify(result.err));
     expect(result.ok.status).toHaveProperty("Resolved");
   });

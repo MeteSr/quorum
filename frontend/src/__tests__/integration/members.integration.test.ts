@@ -2,18 +2,19 @@
  * Integration tests — members canister.
  *
  * Requires: icp network start -d && bash scripts/deploy.sh
- * Run:      npm run test:integration  (from repo root)
+ * Run:      npm run test:integration
  *
  * What these tests prove that unit tests cannot:
- *   - Role Variant round-trips (Homeowner / BoardMember / etc.)
  *   - registerMember persists and returns a Member with correct principal
+ *   - Role Variant round-trips as Homeowner
  *   - getAllMembers includes the registered member
- *   - isBoardMember reflects the current role
- *   - initAdmin sets the calling principal as BoardPresident
+ *   - isBoardMember returns a bool for a known principal
+ *   - getMember returns the Opt wrapper correctly
  */
 
 import { describe, it, expect, beforeAll } from "vitest";
 import { Actor } from "@icp-sdk/core/agent";
+import { Principal } from "@dfinity/principal";
 import { idlFactory } from "@/services/members";
 import { getAgent } from "@/services/actor";
 import { TEST_PRINCIPAL } from "./setup";
@@ -22,6 +23,7 @@ const CANISTER_ID = (process.env as any).CANISTER_ID_MEMBERS || "";
 const deployed = !!CANISTER_ID;
 
 const RUN_ID = Date.now();
+const INVITE  = `invite-${RUN_ID}`;
 
 async function getActor() {
   return Actor.createActor(idlFactory, { agent: await getAgent(), canisterId: CANISTER_ID });
@@ -32,9 +34,19 @@ describe.skipIf(!deployed)("registerMember — Candid serialization", () => {
 
   beforeAll(async () => {
     const a = await getActor();
+
+    // Claim admin on fresh canister; ignore if already initialized
+    await (a.initAdmin() as Promise<any>).catch(() => {});
+
+    // Generate an invite code (requires admin)
+    const inviteResult = await a.generateInviteCode(INVITE, 10, []) as any;
+    if ("err" in inviteResult && !("AlreadyExists" in inviteResult.err)) {
+      throw new Error(JSON.stringify(inviteResult.err));
+    }
+
     const result = await a.registerMember(
       `unit-${RUN_ID}`, `Test Member ${RUN_ID}`, `member-${RUN_ID}@quorum.test`,
-      { Homeowner: null }
+      INVITE
     ) as any;
     if ("err" in result) {
       if ("AlreadyExists" in result.err) {
@@ -65,8 +77,7 @@ describe.skipIf(!deployed)("registerMember — Candid serialization", () => {
 
   it("joinedAt is a BigInt nanosecond timestamp", () => {
     expect(typeof member.joinedAt).toBe("bigint");
-    // If ns→ms conversion was accidentally applied, value would be tiny
-    expect(member.joinedAt).toBeGreaterThan(BigInt(1_000_000_000_000_000_000n));
+    expect(member.joinedAt).toBeGreaterThan(BigInt("1000000000000000000"));
   });
 });
 
@@ -80,10 +91,9 @@ describe.skipIf(!deployed)("getAllMembers — entity scoping", () => {
 });
 
 describe.skipIf(!deployed)("isBoardMember — role check", () => {
-  it("returns false for a Homeowner", async () => {
+  it("returns a boolean for a known principal", async () => {
     const a = await getActor();
-    const result = await a.isBoardMember() as boolean;
-    // Test identity is registered as Homeowner — may already be board from initAdmin
+    const result = await a.isBoardMember(Principal.fromText(TEST_PRINCIPAL)) as boolean;
     expect(typeof result).toBe("boolean");
   });
 });
@@ -91,7 +101,7 @@ describe.skipIf(!deployed)("isBoardMember — role check", () => {
 describe.skipIf(!deployed)("getMember — query", () => {
   it("returns the member for the calling principal", async () => {
     const a = await getActor();
-    const result = await a.getMember(TEST_PRINCIPAL) as any;
+    const result = await a.getMember(Principal.fromText(TEST_PRINCIPAL)) as any;
     // Returns Opt — check the array wrapper
     expect(Array.isArray(result)).toBe(true);
   });
