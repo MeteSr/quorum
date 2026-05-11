@@ -73,6 +73,62 @@ jobs:
               icp build "$canister" || exit 1
             done
 
+  # ── Backend: deploy + integration tests ──────────────────────────────────
+  test-backend:
+    name: Backend canister tests
+    runs-on: ubuntu-latest
+    needs: [motoko-check]
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '20'
+
+      - name: Install icp-cli
+        run: npm install -g @icp-sdk/icp-cli
+
+      - name: Cache mops packages
+        uses: actions/cache@v5
+        with:
+          path: ~/.cache/mops
+          key: mops-${{ runner.os }}-${{ hashFiles('mops.toml') }}
+
+      - name: Install mops
+        run: npm install -g ic-mops
+
+      - name: Install Motoko dependencies
+        run: mops install
+
+      - name: Initialize mops toolchain (downloads moc)
+        run: |
+          mops toolchain init
+          MOC_BIN=$(mops toolchain bin moc 2>/dev/null) || MOC_BIN=""
+          if [ -z "$MOC_BIN" ]; then
+            rm -rf .mops/_tmp && mops toolchain init
+            MOC_BIN=$(mops toolchain bin moc)
+          fi
+          "$MOC_BIN" --version
+
+      - name: Install ic-wasm
+        run: |
+          TMP=$(mktemp -d)
+          curl -sSfL --retry 3 --retry-delay 5 \
+            https://github.com/dfinity/ic-wasm/releases/download/0.9.11/ic-wasm-x86_64-unknown-linux-musl.tar.xz \
+            -o "$TMP/ic-wasm.tar.xz"
+          tar -xJf "$TMP/ic-wasm.tar.xz" -C "$TMP"
+          BIN=$(find "$TMP" -name "ic-wasm" -type f | head -1)
+          sudo install -m 755 "$BIN" /usr/local/bin/ic-wasm
+          rm -rf "$TMP"
+          ic-wasm --version
+
+      - name: Deploy all canisters
+        # deploy.sh starts the icp network, mints local cycles, and deploys all 6 canisters
+        run: bash scripts/deploy.sh
+
+      - name: Run backend integration tests
+        run: bash scripts/test-backend.sh
+
   # ── Frontend: type check + unit tests + build ─────────────────────────────
   test-frontend:
     runs-on: ubuntu-latest
