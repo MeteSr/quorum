@@ -4,7 +4,7 @@
 
 ```bash
 icp network start -d                     # start local ICP network
-bash scripts/deploy.sh                   # deploy all 6 canisters + frontend
+bash scripts/deploy.sh                   # deploy all 11 canisters + frontend
 cd frontend && npm run dev               # Vite dev server at :5173
 
 # Frontend tests
@@ -19,7 +19,7 @@ bash backend/maintenance/test.sh        # run a single test file directly
 
 ## Architecture
 
-9 Motoko canisters (`persistent actor`, mo:core). All variables are implicitly stable.
+11 Motoko canisters (`persistent actor`, mo:core). All variables are implicitly stable.
 
 | Canister | Responsibility |
 |---|---|
@@ -32,11 +32,13 @@ bash backend/maintenance/test.sh        # run a single test file directly
 | violations | Violation reports, replies, status workflow |
 | meetings | Meeting records, agenda, attendance, motions, minutes |
 | calendar | Community calendar, events, iCal feed via http_request |
+| arc | Architectural review committee requests + board approval workflow |
+| parking | Vehicle registry, permits (resident/guest/temporary), violation log + tow authorization |
 
 ## Conventions
 
 - No border-radius (sharp editorial corners)
-- Inline styles, `const S = {...}` token block at top of each component
+- Inline styles, `const styles = {...}` token block at top of each component (avoid single-letter `S`)
 - Colors: ink `#0E0E0C`, paper `#F7F6F2`, rule `#C8C3B8`, accent `#2563EB`
 - Fonts: IBM Plex Mono (labels/nav), IBM Plex Sans (body), Georgia (headings)
 - Bump `DEPLOY_SCRIPT_VERSION` in `scripts/deploy.sh` on every change

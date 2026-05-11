@@ -62,6 +62,20 @@ canisters:
         main: backend/calendar/main.mo
         args: ""
 
+  - name: arc
+    recipe:
+      type: "@dfinity/motoko@v4.0.0"
+      configuration:
+        main: backend/arc/main.mo
+        args: ""
+
+  - name: parking
+    recipe:
+      type: "@dfinity/motoko@v4.0.0"
+      configuration:
+        main: backend/parking/main.mo
+        args: ""
+
   - name: frontend
     recipe:
       type: "@dfinity/asset-canister@v2.1.0"

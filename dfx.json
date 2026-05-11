@@ -42,6 +42,14 @@
       "type": "motoko",
       "main": "backend/calendar/main.mo"
     },
+    "arc": {
+      "type": "motoko",
+      "main": "backend/arc/main.mo"
+    },
+    "parking": {
+      "type": "motoko",
+      "main": "backend/parking/main.mo"
+    },
     "frontend": {
       "type": "assets",
       "source": ["frontend/dist"],
@@ -54,7 +62,9 @@
         "maintenance",
         "violations",
         "meetings",
-        "calendar"
+        "calendar",
+        "arc",
+        "parking"
       ]
     }
   },

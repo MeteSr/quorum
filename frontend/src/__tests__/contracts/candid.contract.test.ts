@@ -14,6 +14,8 @@ import { idlFactory as maintenanceIdl }   from "../../services/maintenance";
 import { idlFactory as violationsIdl }    from "../../services/violations";
 import { idlFactory as meetingsIdl }      from "../../services/meetings";
 import { idlFactory as calendarIdl }      from "../../services/calendar";
+import { idlFactory as arcIdl }           from "../../services/arc";
+import { idlFactory as parkingIdl }       from "../../services/parking";
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
 
@@ -429,5 +431,97 @@ describe("calendar IDL factory", () => {
 
   test("listEvents takes 2 args (startAt, endAt)", () => {
     expect(methods.get("listEvents")!.argTypes).toHaveLength(2);
+  });
+});
+
+// ─── ARC ─────────────────────────────────────────────────────────────────────
+
+describe("arc IDL factory", () => {
+  let methods: ReturnType<typeof extractService>;
+  beforeAll(() => { methods = extractService(arcIdl); });
+
+  test("exposes all expected methods", () => {
+    const expected = [
+      "getAllRequests",
+      "getMyRequests",
+      "getRequest",
+      "getRequestsForUnit",
+      "submitRequest",
+      "updateStatus",
+    ];
+    expect([...methods.keys()].sort()).toEqual(expected);
+  });
+
+  test("submitRequest is an update call", () => {
+    expect(methods.get("submitRequest")!.isQuery).toBe(false);
+  });
+
+  test("updateStatus is an update call", () => {
+    expect(methods.get("updateStatus")!.isQuery).toBe(false);
+  });
+
+  test("getRequest is a query", () => {
+    expect(methods.get("getRequest")!.isQuery).toBe(true);
+  });
+
+  test("getAllRequests is a query", () => {
+    expect(methods.get("getAllRequests")!.isQuery).toBe(true);
+  });
+
+  test("submitRequest takes 4 args", () => {
+    expect(methods.get("submitRequest")!.argTypes).toHaveLength(4);
+  });
+
+  test("updateStatus takes 3 args", () => {
+    expect(methods.get("updateStatus")!.argTypes).toHaveLength(3);
+  });
+});
+
+// ─── Parking ─────────────────────────────────────────────────────────────────
+
+describe("parking IDL factory", () => {
+  let methods: ReturnType<typeof extractService>;
+  beforeAll(() => { methods = extractService(parkingIdl); });
+
+  test("exposes all expected methods", () => {
+    const expected = [
+      "authorizeTow",
+      "getAllParkingViolations",
+      "getPermitsForVehicle",
+      "getVehiclesForUnit",
+      "issuePermit",
+      "logViolation",
+      "lookupVehicle",
+      "registerVehicle",
+    ];
+    expect([...methods.keys()].sort()).toEqual(expected);
+  });
+
+  test("registerVehicle is an update call", () => {
+    expect(methods.get("registerVehicle")!.isQuery).toBe(false);
+  });
+
+  test("issuePermit is an update call", () => {
+    expect(methods.get("issuePermit")!.isQuery).toBe(false);
+  });
+
+  test("lookupVehicle is a query", () => {
+    expect(methods.get("lookupVehicle")!.isQuery).toBe(true);
+  });
+
+  test("getAllParkingViolations is a query", () => {
+    expect(methods.get("getAllParkingViolations")!.isQuery).toBe(true);
+  });
+
+  test("registerVehicle takes 7 args", () => {
+    expect(methods.get("registerVehicle")!.argTypes).toHaveLength(7);
+  });
+
+  test("logViolation takes 6 args", () => {
+    expect(methods.get("logViolation")!.argTypes).toHaveLength(6);
+  });
+
+  test("lookupVehicle takes 2 args (plateState, licensePlate)", () => {
+    expect(methods.get("lookupVehicle")!.argTypes).toHaveLength(2);
   });
 });
