@@ -142,7 +142,9 @@ persistent actor Maintenance {
           assignedVendorId = ?vendorId;
           scheduledDate;
           status    = #Assigned;
-          history   = Array.append(r.history, [entry]);
+          history   = Array.tabulate<AuditEntry>(r.history.size() + 1, func(i) {
+            if (i < r.history.size()) r.history[i] else entry
+          });
           updatedAt = Time.now();
         };
         Map.add(requests, Text.compare, requestId, updated);
@@ -168,7 +170,9 @@ persistent actor Maintenance {
         let updated : MaintenanceRequest = {
           r with
           status;
-          history   = Array.append(r.history, [entry]);
+          history   = Array.tabulate<AuditEntry>(r.history.size() + 1, func(i) {
+            if (i < r.history.size()) r.history[i] else entry
+          });
           updatedAt = Time.now();
         };
         Map.add(requests, Text.compare, requestId, updated);
