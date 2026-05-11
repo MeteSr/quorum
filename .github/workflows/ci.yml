@@ -73,11 +73,7 @@ jobs:
               icp build "$canister" || exit 1
             done
 
-<<<<<<< HEAD
-  # ── Backend canister integration tests ────────────────────────────────────
-=======
   # ── Backend: deploy + integration tests ──────────────────────────────────
->>>>>>> origin/main
   test-backend:
     runs-on: ubuntu-latest
     needs: [motoko-check]
@@ -89,20 +85,13 @@ jobs:
           node-version: '20'
 
       - name: Install dfx
-<<<<<<< HEAD
-        run: |
-          curl -fsSL "https://github.com/dfinity/sdk/releases/download/0.24.3/dfx-x86_64-unknown-linux-gnu.tar.gz" \
-            | tar -xz
-          DFX_BIN=$(find . -name "dfx" -type f -perm /111 2>/dev/null | head -1)
-          [ -z "$DFX_BIN" ] && DFX_BIN=$(find . -name "dfx*" -type f -perm /111 2>/dev/null | head -1)
-=======
         # dfx handles cycle fabrication automatically on local replicas.
         # test-backend.sh calls dfx ping, so dfx must be the active replica.
         run: |
           curl -fsSL "https://github.com/dfinity/sdk/releases/download/0.24.3/dfx-x86_64-unknown-linux-gnu.tar.gz" \
             | tar -xz
-          DFX_BIN=$(find . -name "dfx*" -type f -perm /111 | head -1)
->>>>>>> origin/main
+          DFX_BIN=$(find . -name "dfx" -type f -perm /111 2>/dev/null | head -1)
+          [ -z "$DFX_BIN" ] && DFX_BIN=$(find . -name "dfx*" -type f -perm /111 2>/dev/null | head -1)
           sudo install -m 755 "$DFX_BIN" /usr/local/bin/dfx
           dfx --version
 
