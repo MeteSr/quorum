@@ -94,12 +94,12 @@ persistent actor Meetings {
 
   // ─── Wiring ───────────────────────────────────────────────────────────────
 
-  public shared func setCalendarCanisterId(id : Text) : async () {
-    calendarCanisterId := id;
+  public shared func setCalendarCanisterId(canisterId : Text) : async () {
+    calendarCanisterId := canisterId;
   };
 
-  public shared func setDocumentsCanisterId(id : Text) : async () {
-    documentsCanisterId := id;
+  public shared func setDocumentsCanisterId(canisterId : Text) : async () {
+    documentsCanisterId := canisterId;
   };
 
   // ─── Mutations ────────────────────────────────────────────────────────────
@@ -110,10 +110,10 @@ persistent actor Meetings {
     agendaItems  : [Text]           // initial agenda item titles
   ) : async Result.Result<Meeting, Error> {
     if (date <= 0) return #err(#InvalidInput("date must be positive"));
-    let items : [AgendaItem] = Array.tabulate<AgendaItem>(agendaItems.size(), func(i) {
-      { id = nextAgendaId(); title = agendaItems[i]; presenter = null; durationMins = null; motions = [] }
+    let items : [AgendaItem] = Array.tabulate<AgendaItem>(agendaItems.size(), func(idx) {
+      { id = nextAgendaId(); title = agendaItems[idx]; presenter = null; durationMins = null; motions = [] }
     });
-    let m : Meeting = {
+    let meeting : Meeting = {
       id          = nextMeetingId();
       date;
       meetingType;
@@ -125,15 +125,15 @@ persistent actor Meetings {
       createdAt   = Time.now();
       updatedAt   = Time.now();
     };
-    Map.add(meetings, Text.compare, m.id, m);
+    Map.add(meetings, Text.compare, meeting.id, meeting);
     // Fire-and-forget: create calendar event if calendar canister is wired
     if (calendarCanisterId != "") {
       let cal = actor(calendarCanisterId) : actor {
         createEvent : (Text, Int, Int, { #Meeting; #CommunityEvent; #MaintenanceWindow; #Holiday }, { #All; #Board }, ?Text) -> async ();
       };
-      ignore cal.createEvent(m.id # " — Meeting", date, date + 7_200_000_000_000, #Meeting, #All, null);
+      ignore cal.createEvent(meeting.id # " — Meeting", date, date + 7_200_000_000_000, #Meeting, #All, null);
     };
-    #ok(m)
+    #ok(meeting)
   };
 
   public shared func addAgendaItem(
@@ -145,14 +145,14 @@ persistent actor Meetings {
     if (Text.size(title) == 0) return #err(#InvalidInput("title required"));
     switch (Map.get(meetings, Text.compare, meetingId)) {
       case null { #err(#NotFound) };
-      case (?m) {
+      case (?meeting) {
         let newItem : AgendaItem = {
           id = nextAgendaId(); title; presenter; durationMins; motions = []
         };
-        let newItems = Array.tabulate<AgendaItem>(m.agendaItems.size() + 1, func(i) {
-          if (i < m.agendaItems.size()) m.agendaItems[i] else newItem
+        let newItems = Array.tabulate<AgendaItem>(meeting.agendaItems.size() + 1, func(idx) {
+          if (idx < meeting.agendaItems.size()) meeting.agendaItems[idx] else newItem
         });
-        let updated = { m with agendaItems = newItems; updatedAt = Time.now() };
+        let updated = { meeting with agendaItems = newItems; updatedAt = Time.now() };
         Map.add(meetings, Text.compare, meetingId, updated);
         #ok(updated)
       };
@@ -165,8 +165,8 @@ persistent actor Meetings {
   ) : async Result.Result<Meeting, Error> {
     switch (Map.get(meetings, Text.compare, meetingId)) {
       case null { #err(#NotFound) };
-      case (?m) {
-        let updated = { m with attendees; quorumMet = attendees.size() > 0; updatedAt = Time.now() };
+      case (?meeting) {
+        let updated = { meeting with attendees; quorumMet = attendees.size() > 0; updatedAt = Time.now() };
         Map.add(meetings, Text.compare, meetingId, updated);
         #ok(updated)
       };
@@ -185,21 +185,21 @@ persistent actor Meetings {
     if (Text.size(text) == 0) return #err(#InvalidInput("motion text required"));
     switch (Map.get(meetings, Text.compare, meetingId)) {
       case null { #err(#NotFound) };
-      case (?m) {
+      case (?meeting) {
         let motion : Motion = {
           id = nextMotionId(); text; movedBy; secondedBy; outcome; votes
         };
-        let newItems = Array.tabulate<AgendaItem>(m.agendaItems.size(), func(i) {
-          let item = m.agendaItems[i];
+        let newItems = Array.tabulate<AgendaItem>(meeting.agendaItems.size(), func(agendaIdx) {
+          let item = meeting.agendaItems[agendaIdx];
           if (item.id != agendaItemId) item
           else {
-            let newMotions = Array.tabulate<Motion>(item.motions.size() + 1, func(j) {
-              if (j < item.motions.size()) item.motions[j] else motion
+            let newMotions = Array.tabulate<Motion>(item.motions.size() + 1, func(motionIdx) {
+              if (motionIdx < item.motions.size()) item.motions[motionIdx] else motion
             });
             { item with motions = newMotions }
           }
         });
-        let updated = { m with agendaItems = newItems; updatedAt = Time.now() };
+        let updated = { meeting with agendaItems = newItems; updatedAt = Time.now() };
         Map.add(meetings, Text.compare, meetingId, updated);
         #ok(updated)
       };
@@ -209,18 +209,18 @@ persistent actor Meetings {
   public shared func generateMinutes(meetingId : Text) : async Result.Result<Text, Error> {
     switch (Map.get(meetings, Text.compare, meetingId)) {
       case null { #err(#NotFound) };
-      case (?m) {
-        let typeLabel = switch (m.meetingType) {
+      case (?meeting) {
+        let typeLabel = switch (meeting.meetingType) {
           case (#Annual)  "Annual Meeting";
           case (#Board)   "Board Meeting";
           case (#Special) "Special Meeting";
         };
         var lines : Text = "MINUTES OF " # typeLabel # "\n";
-        lines #= "Meeting ID: " # m.id # "\n";
-        lines #= "Attendees: " # Nat.toText(m.attendees.size()) # "\n";
-        lines #= "Quorum met: " # (if (m.quorumMet) "Yes" else "No") # "\n\n";
+        lines #= "Meeting ID: " # meeting.id # "\n";
+        lines #= "Attendees: " # Nat.toText(meeting.attendees.size()) # "\n";
+        lines #= "Quorum met: " # (if (meeting.quorumMet) "Yes" else "No") # "\n\n";
         lines #= "AGENDA\n";
-        for (item in Iter.fromArray(m.agendaItems)) {
+        for (item in Iter.fromArray(meeting.agendaItems)) {
           lines #= "  " # item.title # "\n";
           for (motion in Iter.fromArray(item.motions)) {
             let outcomeLabel = switch (motion.outcome) {
@@ -233,7 +233,7 @@ persistent actor Meetings {
                    # "  Abstain: " # Nat.toText(motion.votes.abstainVotes) # "\n";
           };
         };
-        let updated = { m with minutesText = ?lines; updatedAt = Time.now() };
+        let updated = { meeting with minutesText = ?lines; updatedAt = Time.now() };
         Map.add(meetings, Text.compare, meetingId, updated);
         #ok(lines)
       };
@@ -242,8 +242,8 @@ persistent actor Meetings {
 
   // ─── Queries ──────────────────────────────────────────────────────────────
 
-  public query func getMeeting(id : Text) : async ?Meeting {
-    Map.get(meetings, Text.compare, id)
+  public query func getMeeting(meetingId : Text) : async ?Meeting {
+    Map.get(meetings, Text.compare, meetingId)
   };
 
   public query func getAllMeetings() : async [Meeting] {
