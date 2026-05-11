@@ -3,23 +3,32 @@
 ## Commands
 
 ```bash
-dfx start --background         # start local ICP replica
-bash scripts/deploy.sh         # deploy all 5 canisters + frontend
-cd frontend && npm run dev     # Vite dev server at :5173
-cd frontend && npm run test:unit
+icp network start -d                     # start local ICP network
+bash scripts/deploy.sh                   # deploy all 6 canisters + frontend
+cd frontend && npm run dev               # Vite dev server at :5173
+
+# Frontend tests
+cd frontend && npm run test:unit         # vitest unit tests (service + store)
+cd frontend && npm run test:unit:coverage
+
+# Backend integration tests (requires deployed canisters)
+bash scripts/test-backend.sh            # run all 6 canister test suites in parallel
+bash scripts/test-backend.sh members    # run one canister's suite
+bash backend/maintenance/test.sh        # run a single test file directly
 ```
 
 ## Architecture
 
-5 Motoko canisters (`persistent actor`, mo:core). All variables are implicitly stable.
+6 Motoko canisters (`persistent actor`, mo:core). All variables are implicitly stable.
 
 | Canister | Responsibility |
 |---|---|
-| members | Unit registry, board roles |
+| members | Unit registry, board roles, invite codes |
 | governance | Proposals, voting |
 | treasury | Dues, assessments, payments |
 | documents | CC&Rs, meeting minutes, budgets |
 | announcements | Community notices |
+| maintenance | Maintenance requests, assignment, audit trail, SLA |
 
 ## Conventions
 
