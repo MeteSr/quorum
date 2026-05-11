@@ -73,7 +73,7 @@ OUT=$(call addReply "(\"$VIO_ID\", \"We will investigate.\")" 2>&1)
 assert_contains "addReply returns ok" "ok" "$OUT"
 assert_contains "addReply stores reply text" "We will investigate." "$OUT"
 
-OUT=$(call addReply '"VIO_9999", "text"' 2>&1)
+OUT=$(call addReply '("VIO_9999", "text")' 2>&1)
 assert_contains "addReply returns NotFound for unknown violation" "NotFound" "$OUT"
 
 # ── updateStatus ─────────────────────────────────────────────────────────────
