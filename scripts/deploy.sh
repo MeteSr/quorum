@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-DEPLOY_SCRIPT_VERSION="0.4.0"
+DEPLOY_SCRIPT_VERSION="0.5.1"
 ENV=${1:-local}
 
 echo "============================================"
@@ -128,7 +128,7 @@ if [ "${DRY_RUN:-0}" = "1" ]; then
 fi
 
 # ── Canister deployment ───────────────────────────────────────────────────────
-CANISTERS=(members governance treasury documents announcements)
+CANISTERS=(members governance treasury documents announcements maintenance)
 DEPLOY_PRINCIPAL=$(icp identity principal)
 
 # Seed icp-cli state from canister_ids.json on CI
@@ -205,6 +205,13 @@ else
 fi
 
 # ── Frontend ──────────────────────────────────────────────────────────────────
+if [ "${SKIP_FRONTEND:-0}" = "1" ]; then
+  echo "▶ Skipping frontend build (SKIP_FRONTEND=1)"
+  echo ""
+  echo "✅ Quorum deployed to $ENV"
+  exit 0
+fi
+
 echo "▶ Building frontend..."
 cd frontend
 for canister in "${CANISTERS[@]}"; do
@@ -228,7 +235,7 @@ try:
     existing = json.load(open("canister_ids.json"))
 except Exception:
     existing = {}
-for name in ["members","governance","treasury","documents","announcements","frontend"]:
+for name in ["members","governance","treasury","documents","announcements","maintenance","frontend"]:
     result = subprocess.run(["icp","canister","id",name,"-e",env],
                             capture_output=True, text=True)
     cid = result.stdout.strip()
