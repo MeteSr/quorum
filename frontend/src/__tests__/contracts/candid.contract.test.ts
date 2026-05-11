@@ -10,6 +10,7 @@ import { idlFactory as governanceIdl }    from "../../services/governance";
 import { idlFactory as treasuryIdl }      from "../../services/treasury";
 import { idlFactory as documentsIdl }     from "../../services/documents";
 import { idlFactory as announcementsIdl } from "../../services/announcements";
+import { idlFactory as maintenanceIdl }   from "../../services/maintenance";
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
 
@@ -217,5 +218,69 @@ describe("announcements IDL factory", () => {
 
   test("post takes 4 args", () => {
     expect(methods.get("post")!.argTypes).toHaveLength(4);
+  });
+});
+
+// ─── Maintenance ──────────────────────────────────────────────────────────────
+
+describe("maintenance IDL factory", () => {
+  let methods: ReturnType<typeof extractService>;
+  beforeAll(() => { methods = extractService(maintenanceIdl); });
+
+  test("exposes all expected methods", () => {
+    const expected = [
+      "assignRequest",
+      "getAllRequests",
+      "getMyRequests",
+      "getOpenRequests",
+      "getRequest",
+      "getRequestsForUnit",
+      "setMembersCanisterId",
+      "submitRequest",
+      "updateStatus",
+    ];
+    expect([...methods.keys()].sort()).toEqual(expected);
+  });
+
+  test("submitRequest is an update call", () => {
+    expect(methods.get("submitRequest")!.isQuery).toBe(false);
+  });
+
+  test("submitRequest takes 4 args", () => {
+    expect(methods.get("submitRequest")!.argTypes).toHaveLength(4);
+  });
+
+  test("assignRequest is an update call", () => {
+    expect(methods.get("assignRequest")!.isQuery).toBe(false);
+  });
+
+  test("assignRequest takes 3 args", () => {
+    expect(methods.get("assignRequest")!.argTypes).toHaveLength(3);
+  });
+
+  test("updateStatus is an update call", () => {
+    expect(methods.get("updateStatus")!.isQuery).toBe(false);
+  });
+
+  test("updateStatus takes 3 args", () => {
+    expect(methods.get("updateStatus")!.argTypes).toHaveLength(3);
+  });
+
+  test("getMyRequests is a query", () => {
+    expect(methods.get("getMyRequests")!.isQuery).toBe(true);
+  });
+
+  test("getAllRequests is a query", () => {
+    expect(methods.get("getAllRequests")!.isQuery).toBe(true);
+  });
+
+  test("getOpenRequests is a query", () => {
+    expect(methods.get("getOpenRequests")!.isQuery).toBe(true);
+  });
+
+  test("getRequestsForUnit is a query with 1 arg", () => {
+    const m = methods.get("getRequestsForUnit")!;
+    expect(m.isQuery).toBe(true);
+    expect(m.argTypes).toHaveLength(1);
   });
 });
