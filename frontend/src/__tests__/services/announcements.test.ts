@@ -16,6 +16,9 @@ import {
   getAll,
   post,
   deleteAnnouncement,
+  broadcastEmergency,
+  getBroadcasts,
+  getRecentBroadcasts,
 } from "@/services/announcements";
 
 const MOCK_NOTICE: any = {
@@ -35,13 +38,25 @@ const MOCK_URGENT: any = {
   priority: { Urgent: null },
 };
 
+const MOCK_BROADCAST: any = {
+  id:       "BCAST_1",
+  title:    "Water main break on Oak St",
+  body:     "Avoid the area. Water service restored by 6pm.",
+  severity: { Emergency: null },
+  sentBy:   { toText: () => "board-principal" } as any,
+  sentAt:   BigInt(1_700_000_000_000_000_000),
+};
+
 function makeMockActor(overrides: Record<string, any> = {}) {
   return {
-    getActive:       vi.fn().mockResolvedValue([MOCK_NOTICE]),
-    getUrgent:       vi.fn().mockResolvedValue([MOCK_URGENT]),
-    getAll:          vi.fn().mockResolvedValue([MOCK_NOTICE, MOCK_URGENT]),
-    post:            vi.fn().mockResolvedValue({ ok: MOCK_NOTICE }),
-    delete:          vi.fn().mockResolvedValue({ ok: null }),
+    getActive:           vi.fn().mockResolvedValue([MOCK_NOTICE]),
+    getUrgent:           vi.fn().mockResolvedValue([MOCK_URGENT]),
+    getAll:              vi.fn().mockResolvedValue([MOCK_NOTICE, MOCK_URGENT]),
+    post:                vi.fn().mockResolvedValue({ ok: MOCK_NOTICE }),
+    delete:              vi.fn().mockResolvedValue({ ok: null }),
+    broadcastEmergency:  vi.fn().mockResolvedValue({ ok: MOCK_BROADCAST }),
+    getBroadcasts:       vi.fn().mockResolvedValue([MOCK_BROADCAST]),
+    getRecentBroadcasts: vi.fn().mockResolvedValue([MOCK_BROADCAST]),
     ...overrides,
   };
 }
@@ -107,5 +122,63 @@ describe("announcements service — deleteAnnouncement", () => {
     );
     const result = await deleteAnnouncement("bad-id");
     expect((result as any).err).toHaveProperty("NotFound");
+  });
+});
+
+describe("announcements service — broadcastEmergency", () => {
+  beforeEach(() => vi.mocked(Actor.createActor).mockReturnValue(makeMockActor() as any));
+
+  it("returns ok with created broadcast", async () => {
+    const result = await broadcastEmergency("Water main break", "Avoid Oak St.", { Emergency: null });
+    expect(result).toHaveProperty("ok");
+    expect((result as any).ok.severity).toEqual({ Emergency: null });
+  });
+
+  it("passes severity variant correctly", async () => {
+    const actor = makeMockActor();
+    vi.mocked(Actor.createActor).mockReturnValue(actor as any);
+    await broadcastEmergency("Gas leak warning", "Evacuate block 4.", { Warning: null });
+    expect(actor.broadcastEmergency).toHaveBeenCalledWith("Gas leak warning", "Evacuate block 4.", { Warning: null });
+  });
+
+  it("returns err NotAuthorized for anonymous caller", async () => {
+    vi.mocked(Actor.createActor).mockReturnValue(
+      makeMockActor({ broadcastEmergency: vi.fn().mockResolvedValue({ err: { NotAuthorized: null } }) }) as any
+    );
+    const result = await broadcastEmergency("Title", "Body", { Info: null });
+    expect((result as any).err).toHaveProperty("NotAuthorized");
+  });
+});
+
+describe("announcements service — getBroadcasts", () => {
+  beforeEach(() => vi.mocked(Actor.createActor).mockReturnValue(makeMockActor() as any));
+
+  it("returns list of broadcasts", async () => {
+    const results = await getBroadcasts();
+    expect(results).toHaveLength(1);
+    expect(results[0].id).toBe("BCAST_1");
+  });
+
+  it("returns empty array when no broadcasts", async () => {
+    vi.mocked(Actor.createActor).mockReturnValue(
+      makeMockActor({ getBroadcasts: vi.fn().mockResolvedValue([]) }) as any
+    );
+    expect(await getBroadcasts()).toEqual([]);
+  });
+});
+
+describe("announcements service — getRecentBroadcasts", () => {
+  beforeEach(() => vi.mocked(Actor.createActor).mockReturnValue(makeMockActor() as any));
+
+  it("returns broadcasts within window", async () => {
+    const results = await getRecentBroadcasts(30);
+    expect(results).toHaveLength(1);
+  });
+
+  it("passes days as BigInt", async () => {
+    const actor = makeMockActor();
+    vi.mocked(Actor.createActor).mockReturnValue(actor as any);
+    await getRecentBroadcasts(7);
+    expect(actor.getRecentBroadcasts).toHaveBeenCalledWith(BigInt(7));
   });
 });

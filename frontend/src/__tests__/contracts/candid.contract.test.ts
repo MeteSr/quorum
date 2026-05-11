@@ -17,6 +17,7 @@ import { idlFactory as calendarIdl }      from "../../services/calendar";
 import { idlFactory as arcIdl }           from "../../services/arc";
 import { idlFactory as parkingIdl }       from "../../services/parking";
 import { idlFactory as vendorsIdl }       from "../../services/vendors";
+import { idlFactory as discussionsIdl }  from "../../services/discussions";
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
 
@@ -252,10 +253,13 @@ describe("announcements IDL factory", () => {
 
   test("exposes all expected methods", () => {
     const expected = [
+      "broadcastEmergency",
       "delete",
       "getActive",
       "getAll",
       "getAnnouncement",
+      "getBroadcasts",
+      "getRecentBroadcasts",
       "getUrgent",
       "post",
     ];
@@ -276,6 +280,22 @@ describe("announcements IDL factory", () => {
 
   test("post takes 4 args", () => {
     expect(methods.get("post")!.argTypes).toHaveLength(4);
+  });
+
+  test("broadcastEmergency is an update call with 3 args", () => {
+    const m = methods.get("broadcastEmergency")!;
+    expect(m.isQuery).toBe(false);
+    expect(m.argTypes).toHaveLength(3);
+  });
+
+  test("getBroadcasts is a query", () => {
+    expect(methods.get("getBroadcasts")!.isQuery).toBe(true);
+  });
+
+  test("getRecentBroadcasts is a query with 1 arg", () => {
+    const m = methods.get("getRecentBroadcasts")!;
+    expect(m.isQuery).toBe(true);
+    expect(m.argTypes).toHaveLength(1);
   });
 });
 
@@ -656,6 +676,79 @@ describe("vendors IDL factory", () => {
 
   test("getExpiringCOIs is a query with 1 arg", () => {
     const m = methods.get("getExpiringCOIs")!;
+    expect(m.isQuery).toBe(true);
+    expect(m.argTypes).toHaveLength(1);
+  });
+});
+
+// ─── Discussions ──────────────────────────────────────────────────────────────
+
+describe("discussions IDL factory", () => {
+  let methods: ReturnType<typeof extractService>;
+  beforeAll(() => { methods = extractService(discussionsIdl); });
+
+  test("exposes all expected methods", () => {
+    const expected = [
+      "addReply",
+      "createPost",
+      "deletePost",
+      "getAllPosts",
+      "getPinnedPosts",
+      "getPost",
+      "getPostsByCategory",
+      "getRepliesForPost",
+      "lockPost",
+      "pinPost",
+    ];
+    expect([...methods.keys()].sort()).toEqual(expected);
+  });
+
+  test("createPost is an update call with 3 args", () => {
+    const m = methods.get("createPost")!;
+    expect(m.isQuery).toBe(false);
+    expect(m.argTypes).toHaveLength(3);
+  });
+
+  test("deletePost is an update call with 1 arg", () => {
+    const m = methods.get("deletePost")!;
+    expect(m.isQuery).toBe(false);
+    expect(m.argTypes).toHaveLength(1);
+  });
+
+  test("addReply is an update call with 2 args", () => {
+    const m = methods.get("addReply")!;
+    expect(m.isQuery).toBe(false);
+    expect(m.argTypes).toHaveLength(2);
+  });
+
+  test("pinPost is an update call with 1 arg", () => {
+    const m = methods.get("pinPost")!;
+    expect(m.isQuery).toBe(false);
+    expect(m.argTypes).toHaveLength(1);
+  });
+
+  test("lockPost is an update call with 1 arg", () => {
+    const m = methods.get("lockPost")!;
+    expect(m.isQuery).toBe(false);
+    expect(m.argTypes).toHaveLength(1);
+  });
+
+  test("getAllPosts is a query", () => {
+    expect(methods.get("getAllPosts")!.isQuery).toBe(true);
+  });
+
+  test("getPinnedPosts is a query", () => {
+    expect(methods.get("getPinnedPosts")!.isQuery).toBe(true);
+  });
+
+  test("getPostsByCategory is a query with 1 arg", () => {
+    const m = methods.get("getPostsByCategory")!;
+    expect(m.isQuery).toBe(true);
+    expect(m.argTypes).toHaveLength(1);
+  });
+
+  test("getRepliesForPost is a query with 1 arg", () => {
+    const m = methods.get("getRepliesForPost")!;
     expect(m.isQuery).toBe(true);
     expect(m.argTypes).toHaveLength(1);
   });

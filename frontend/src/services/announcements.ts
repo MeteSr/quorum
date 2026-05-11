@@ -12,6 +12,12 @@ export function idlFactory({ IDL }: { IDL: any }) {
     Urgent: IDL.Null,
   });
 
+  const Severity = IDL.Variant({
+    Info:      IDL.Null,
+    Warning:   IDL.Null,
+    Emergency: IDL.Null,
+  });
+
   const Announcement = IDL.Record({
     id:        IDL.Text,
     title:     IDL.Text,
@@ -22,6 +28,15 @@ export function idlFactory({ IDL }: { IDL: any }) {
     expiresAt: IDL.Opt(IDL.Int),
   });
 
+  const Broadcast = IDL.Record({
+    id:       IDL.Text,
+    title:    IDL.Text,
+    body:     IDL.Text,
+    severity: Severity,
+    sentBy:   IDL.Principal,
+    sentAt:   IDL.Int,
+  });
+
   const Error = IDL.Variant({
     NotFound:      IDL.Null,
     NotAuthorized: IDL.Null,
@@ -29,21 +44,26 @@ export function idlFactory({ IDL }: { IDL: any }) {
   });
 
   const ResultAnnouncement = IDL.Variant({ ok: Announcement, err: Error });
+  const ResultBroadcast    = IDL.Variant({ ok: Broadcast,    err: Error });
   const ResultUnit         = IDL.Variant({ ok: IDL.Null,     err: Error });
 
   return IDL.Service({
-    post:            IDL.Func([IDL.Text, IDL.Text, Priority, IDL.Opt(IDL.Int)], [ResultAnnouncement], []),
-    delete:          IDL.Func([IDL.Text],                                        [ResultUnit],         []),
-    getAnnouncement: IDL.Func([IDL.Text],                                        [IDL.Opt(Announcement)], ["query"]),
-    getActive:       IDL.Func([],                                                [IDL.Vec(Announcement)], ["query"]),
-    getUrgent:       IDL.Func([],                                                [IDL.Vec(Announcement)], ["query"]),
-    getAll:          IDL.Func([],                                                [IDL.Vec(Announcement)], ["query"]),
+    post:                 IDL.Func([IDL.Text, IDL.Text, Priority, IDL.Opt(IDL.Int)], [ResultAnnouncement], []),
+    delete:               IDL.Func([IDL.Text],                                        [ResultUnit],         []),
+    getAnnouncement:      IDL.Func([IDL.Text],                                        [IDL.Opt(Announcement)], ["query"]),
+    getActive:            IDL.Func([],                                                [IDL.Vec(Announcement)], ["query"]),
+    getUrgent:            IDL.Func([],                                                [IDL.Vec(Announcement)], ["query"]),
+    getAll:               IDL.Func([],                                                [IDL.Vec(Announcement)], ["query"]),
+    broadcastEmergency:   IDL.Func([IDL.Text, IDL.Text, Severity],                   [ResultBroadcast],    []),
+    getBroadcasts:        IDL.Func([],                                                [IDL.Vec(Broadcast)], ["query"]),
+    getRecentBroadcasts:  IDL.Func([IDL.Nat],                                         [IDL.Vec(Broadcast)], ["query"]),
   });
 }
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 export type Priority = { Normal: null } | { Urgent: null };
+export type Severity = { Info: null } | { Warning: null } | { Emergency: null };
 
 export interface Announcement {
   id:        string;
@@ -53,6 +73,15 @@ export interface Announcement {
   postedBy:  import("@dfinity/principal").Principal;
   postedAt:  bigint;
   expiresAt: [] | [bigint];
+}
+
+export interface Broadcast {
+  id:       string;
+  title:    string;
+  body:     string;
+  severity: Severity;
+  sentBy:   import("@dfinity/principal").Principal;
+  sentAt:   bigint;
 }
 
 export type AnnouncementsError =
@@ -68,7 +97,7 @@ async function createActor() {
   return Actor.createActor(idlFactory, { agent, canisterId: CANISTER_ID_ANNOUNCEMENTS });
 }
 
-// ─── Service ──────────────────────────────────────────────────────────────────
+// ─── Announcement Service ─────────────────────────────────────────────────────
 
 export async function getActive(): Promise<Announcement[]> {
   const actor = await createActor() as any;
@@ -102,4 +131,26 @@ export async function deleteAnnouncement(
   const actor = await createActor() as any;
   if (!actor) return { err: { NotFound: null } };
   return actor.delete(id);
+}
+
+// ─── Broadcast Service ────────────────────────────────────────────────────────
+
+export async function broadcastEmergency(
+  title: string, body: string, severity: Severity
+): Promise<{ ok: Broadcast } | { err: AnnouncementsError }> {
+  const actor = await createActor() as any;
+  if (!actor) return { err: { NotFound: null } };
+  return actor.broadcastEmergency(title, body, severity);
+}
+
+export async function getBroadcasts(): Promise<Broadcast[]> {
+  const actor = await createActor() as any;
+  if (!actor) return [];
+  return actor.getBroadcasts();
+}
+
+export async function getRecentBroadcasts(days: number): Promise<Broadcast[]> {
+  const actor = await createActor() as any;
+  if (!actor) return [];
+  return actor.getRecentBroadcasts(BigInt(days));
 }
