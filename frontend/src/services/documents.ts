@@ -1,6 +1,7 @@
-import { Actor, HttpAgent } from "@dfinity/agent";
+import { Actor } from "@icp-sdk/core/agent";
+import { getAgent } from "@/services/actor";
 
-declare const CANISTER_ID_DOCUMENTS: string;
+const CANISTER_ID_DOCUMENTS = (process.env as any).CANISTER_ID_DOCUMENTS || "";
 
 // ─── IDL Factory ─────────────────────────────────────────────────────────────
 
@@ -56,13 +57,13 @@ export function idlFactory({ IDL }: { IDL: any }) {
   const ResultUnit = IDL.Variant({ ok: IDL.Null,     err: Error });
 
   return IDL.Service({
-    uploadDocument:          IDL.Func([IDL.Text, DocCategory, Visibility, IDL.Vec(IDL.Nat8), IDL.Text, IDL.Text], [ResultMeta], []),
-    deleteDocument:          IDL.Func([IDL.Text],                         [ResultUnit],                  []),
-    getDocument:             IDL.Func([IDL.Text],                         [IDL.Opt(Document)],            ["query"]),
-    getDocumentMeta:         IDL.Func([IDL.Text],                         [IDL.Opt(DocumentMeta)],        ["query"]),
-    getDocumentsByCategory:  IDL.Func([DocCategory],                      [IDL.Vec(DocumentMeta)],        ["query"]),
-    getAllPublicDocumentsMeta:IDL.Func([],                                 [IDL.Vec(DocumentMeta)],        ["query"]),
-    getAllDocumentsMeta:      IDL.Func([],                                 [IDL.Vec(DocumentMeta)],        ["query"]),
+    uploadDocument:           IDL.Func([IDL.Text, DocCategory, Visibility, IDL.Vec(IDL.Nat8), IDL.Text, IDL.Text], [ResultMeta], []),
+    deleteDocument:           IDL.Func([IDL.Text],                          [ResultUnit],                  []),
+    getDocument:              IDL.Func([IDL.Text],                          [IDL.Opt(Document)],            ["query"]),
+    getDocumentMeta:          IDL.Func([IDL.Text],                          [IDL.Opt(DocumentMeta)],        ["query"]),
+    getDocumentsByCategory:   IDL.Func([DocCategory],                       [IDL.Vec(DocumentMeta)],        ["query"]),
+    getAllPublicDocumentsMeta: IDL.Func([],                                  [IDL.Vec(DocumentMeta)],        ["query"]),
+    getAllDocumentsMeta:       IDL.Func([],                                  [IDL.Vec(DocumentMeta)],        ["query"]),
   });
 }
 
@@ -98,37 +99,47 @@ export type DocumentsError =
 
 // ─── Actor ────────────────────────────────────────────────────────────────────
 
-function createActor() {
+async function createActor() {
   if (!CANISTER_ID_DOCUMENTS) return null;
-  const agent = new HttpAgent();
-  if (typeof window === "undefined" || window.location.hostname === "localhost") {
-    agent.fetchRootKey().catch(() => {});
-  }
+  const agent = await getAgent();
   return Actor.createActor(idlFactory, { agent, canisterId: CANISTER_ID_DOCUMENTS });
 }
 
 // ─── Service ──────────────────────────────────────────────────────────────────
 
 export async function getAllPublicDocumentsMeta(): Promise<DocumentMeta[]> {
-  const actor = createActor() as any;
+  const actor = await createActor() as any;
   if (!actor) return [];
   return actor.getAllPublicDocumentsMeta();
 }
 
 export async function getAllDocumentsMeta(): Promise<DocumentMeta[]> {
-  const actor = createActor() as any;
+  const actor = await createActor() as any;
   if (!actor) return [];
   return actor.getAllDocumentsMeta();
 }
 
 export async function getDocumentsByCategory(category: DocCategory): Promise<DocumentMeta[]> {
-  const actor = createActor() as any;
+  const actor = await createActor() as any;
   if (!actor) return [];
   return actor.getDocumentsByCategory(category);
 }
 
+export async function uploadDocument(
+  title:       string,
+  category:    DocCategory,
+  visibility:  Visibility,
+  content:     Uint8Array,
+  mimeType:    string,
+  description: string
+): Promise<{ ok: DocumentMeta } | { err: DocumentsError }> {
+  const actor = await createActor() as any;
+  if (!actor) return { err: { NotAuthorized: null } };
+  return actor.uploadDocument(title, category, visibility, content, mimeType, description);
+}
+
 export async function deleteDocument(id: string): Promise<{ ok: null } | { err: DocumentsError }> {
-  const actor = createActor() as any;
+  const actor = await createActor() as any;
   if (!actor) return { err: { NotFound: null } };
   return actor.deleteDocument(id);
 }

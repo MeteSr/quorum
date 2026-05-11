@@ -1,6 +1,7 @@
-import { Actor, HttpAgent } from "@dfinity/agent";
+import { Actor } from "@icp-sdk/core/agent";
+import { getAgent } from "@/services/actor";
 
-declare const CANISTER_ID_GOVERNANCE: string;
+const CANISTER_ID_GOVERNANCE = (process.env as any).CANISTER_ID_GOVERNANCE || "";
 
 // ─── IDL Factory ─────────────────────────────────────────────────────────────
 
@@ -42,27 +43,27 @@ export function idlFactory({ IDL }: { IDL: any }) {
   });
 
   const Error = IDL.Variant({
-    NotFound:      IDL.Null,
-    NotAuthorized: IDL.Null,
-    InvalidInput:  IDL.Text,
+    NotFound:       IDL.Null,
+    NotAuthorized:  IDL.Null,
+    InvalidInput:   IDL.Text,
     DeadlinePassed: IDL.Null,
-    AlreadyVoted:  IDL.Null,
-    NotOpen:       IDL.Null,
+    AlreadyVoted:   IDL.Null,
+    NotOpen:        IDL.Null,
   });
 
   const ResultProposal = IDL.Variant({ ok: Proposal, err: Error });
   const ResultVote     = IDL.Variant({ ok: Vote,     err: Error });
 
   return IDL.Service({
-    setMembersCanisterId: IDL.Func([IDL.Text],                                 [],                  []),
-    createProposal:       IDL.Func([IDL.Text, IDL.Text, IDL.Int, IDL.Nat],     [ResultProposal],    []),
-    openProposal:         IDL.Func([IDL.Text],                                 [ResultProposal],    []),
-    castVote:             IDL.Func([IDL.Text, VoteChoice],                     [ResultVote],        []),
-    finalizeProposal:     IDL.Func([IDL.Text],                                 [ResultProposal],    []),
-    getProposal:          IDL.Func([IDL.Text],                                 [IDL.Opt(Proposal)], ["query"]),
-    getOpenProposals:     IDL.Func([],                                         [IDL.Vec(Proposal)], ["query"]),
-    getAllProposals:       IDL.Func([],                                         [IDL.Vec(Proposal)], ["query"]),
-    getMyVote:            IDL.Func([IDL.Text, IDL.Principal],                  [IDL.Opt(Vote)],     ["query"]),
+    setMembersCanisterId: IDL.Func([IDL.Text],                              [],               []),
+    createProposal:       IDL.Func([IDL.Text, IDL.Text, IDL.Int, IDL.Nat], [ResultProposal], []),
+    openProposal:         IDL.Func([IDL.Text],                              [ResultProposal], []),
+    castVote:             IDL.Func([IDL.Text, VoteChoice],                  [ResultVote],     []),
+    finalizeProposal:     IDL.Func([IDL.Text],                              [ResultProposal], []),
+    getProposal:          IDL.Func([IDL.Text],                              [IDL.Opt(Proposal)], ["query"]),
+    getOpenProposals:     IDL.Func([],                                      [IDL.Vec(Proposal)], ["query"]),
+    getAllProposals:       IDL.Func([],                                      [IDL.Vec(Proposal)], ["query"]),
+    getMyVote:            IDL.Func([IDL.Text, IDL.Principal],               [IDL.Opt(Vote)],     ["query"]),
   });
 }
 
@@ -102,25 +103,22 @@ export type GovernanceError =
 
 // ─── Actor ────────────────────────────────────────────────────────────────────
 
-function createActor() {
+async function createActor() {
   if (!CANISTER_ID_GOVERNANCE) return null;
-  const agent = new HttpAgent();
-  if (typeof window === "undefined" || window.location.hostname === "localhost") {
-    agent.fetchRootKey().catch(() => {});
-  }
+  const agent = await getAgent();
   return Actor.createActor(idlFactory, { agent, canisterId: CANISTER_ID_GOVERNANCE });
 }
 
 // ─── Service ──────────────────────────────────────────────────────────────────
 
 export async function getAllProposals(): Promise<Proposal[]> {
-  const actor = createActor() as any;
+  const actor = await createActor() as any;
   if (!actor) return [];
   return actor.getAllProposals();
 }
 
 export async function getOpenProposals(): Promise<Proposal[]> {
-  const actor = createActor() as any;
+  const actor = await createActor() as any;
   if (!actor) return [];
   return actor.getOpenProposals();
 }
@@ -128,7 +126,7 @@ export async function getOpenProposals(): Promise<Proposal[]> {
 export async function createProposal(
   title: string, description: string, votingDeadline: bigint, quorumPercent: bigint
 ): Promise<{ ok: Proposal } | { err: GovernanceError }> {
-  const actor = createActor() as any;
+  const actor = await createActor() as any;
   if (!actor) return { err: { NotFound: null } };
   return actor.createProposal(title, description, votingDeadline, quorumPercent);
 }
@@ -136,7 +134,7 @@ export async function createProposal(
 export async function castVote(
   proposalId: string, choice: VoteChoice
 ): Promise<{ ok: Vote } | { err: GovernanceError }> {
-  const actor = createActor() as any;
+  const actor = await createActor() as any;
   if (!actor) return { err: { NotFound: null } };
   return actor.castVote(proposalId, choice);
 }
