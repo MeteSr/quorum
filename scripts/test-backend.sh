@@ -34,6 +34,8 @@ ALL_CANISTERS=(
   violations
   meetings
   calendar
+  arc
+  parking
 )
 
 if [ $# -gt 0 ]; then

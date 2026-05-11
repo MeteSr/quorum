@@ -81,7 +81,7 @@ persistent actor Violations {
   ) : async Result.Result<Violation, Error> {
     if (Text.size(unitId)      == 0) return #err(#InvalidInput("unitId required"));
     if (Text.size(description) == 0) return #err(#InvalidInput("description required"));
-    let v : Violation = {
+    let violation : Violation = {
       id          = nextId();
       unitId;
       category;
@@ -93,8 +93,8 @@ persistent actor Violations {
       createdAt   = Time.now();
       updatedAt   = Time.now();
     };
-    Map.add(violations, Text.compare, v.id, v);
-    #ok(v)
+    Map.add(violations, Text.compare, violation.id, violation);
+    #ok(violation)
   };
 
   public shared(msg) func addReply(
@@ -103,30 +103,18 @@ persistent actor Violations {
   ) : async Result.Result<Violation, Error> {
     switch (Map.get(violations, Text.compare, violationId)) {
       case null { #err(#NotFound) };
-      case (?v) {
+      case (?violation) {
         if (Text.size(text) == 0) return #err(#InvalidInput("reply text required"));
         let reply : Reply = {
           author    = msg.caller;
           text;
           createdAt = Time.now();
         };
-        let newReplies = Array.tabulate<Reply>(v.replies.size() + 1, func(i) {
-          if (i < v.replies.size()) v.replies[i] else reply
+        let newReplies = Array.tabulate<Reply>(violation.replies.size() + 1, func(idx) {
+          if (idx < violation.replies.size()) violation.replies[idx] else reply
         });
-        let updated : Violation = {
-          id          = v.id;
-          unitId      = v.unitId;
-          category    = v.category;
-          description = v.description;
-          photoHash   = v.photoHash;
-          status      = v.status;
-          replies     = newReplies;
-          submittedBy = v.submittedBy;
-          createdAt   = v.createdAt;
-          updatedAt   = Time.now();
-        };
-        ignore Map.remove(violations, Text.compare, violationId);
-        Map.add(violations, Text.compare, updated.id, updated);
+        let updated = { violation with replies = newReplies; updatedAt = Time.now() };
+        Map.add(violations, Text.compare, violationId, updated);
         #ok(updated)
       };
     }
@@ -138,25 +126,10 @@ persistent actor Violations {
   ) : async Result.Result<Violation, Error> {
     switch (Map.get(violations, Text.compare, violationId)) {
       case null { #err(#NotFound) };
-      case (?v) {
-        // Only the submitter or the same principal can escalate;
-        // status changes are open to board — here we allow any authenticated caller.
-        // (Access control can be layered via members canister in a future pass.)
+      case (?violation) {
         if (Principal.isAnonymous(msg.caller)) return #err(#NotAuthorized);
-        let updated : Violation = {
-          id          = v.id;
-          unitId      = v.unitId;
-          category    = v.category;
-          description = v.description;
-          photoHash   = v.photoHash;
-          status;
-          replies     = v.replies;
-          submittedBy = v.submittedBy;
-          createdAt   = v.createdAt;
-          updatedAt   = Time.now();
-        };
-        ignore Map.remove(violations, Text.compare, violationId);
-        Map.add(violations, Text.compare, updated.id, updated);
+        let updated = { violation with status; updatedAt = Time.now() };
+        Map.add(violations, Text.compare, violationId, updated);
         #ok(updated)
       };
     }
@@ -164,19 +137,19 @@ persistent actor Violations {
 
   // ─── Queries ──────────────────────────────────────────────────────────────────
 
-  public query func getViolation(id : Text) : async ?Violation {
-    Map.get(violations, Text.compare, id)
+  public query func getViolation(violationId : Text) : async ?Violation {
+    Map.get(violations, Text.compare, violationId)
   };
 
   public shared query(msg) func getMyViolations() : async [Violation] {
-    Array.filter<Violation>(Iter.toArray(Map.values(violations)), func(v) {
-      v.submittedBy == msg.caller
+    Array.filter<Violation>(Iter.toArray(Map.values(violations)), func(violation) {
+      violation.submittedBy == msg.caller
     })
   };
 
   public query func getViolationsForUnit(unitId : Text) : async [Violation] {
-    Array.filter<Violation>(Iter.toArray(Map.values(violations)), func(v) {
-      v.unitId == unitId
+    Array.filter<Violation>(Iter.toArray(Map.values(violations)), func(violation) {
+      violation.unitId == unitId
     })
   };
 
