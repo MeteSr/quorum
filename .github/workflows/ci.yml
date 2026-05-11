@@ -123,7 +123,7 @@ jobs:
 
       - name: Deploy canisters
         run: |
-          for canister in members governance treasury documents announcements maintenance violations; do
+          for canister in members governance treasury documents announcements maintenance violations meetings calendar; do
             dfx deploy "$canister"
           done
 

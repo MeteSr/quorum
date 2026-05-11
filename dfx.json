@@ -34,6 +34,14 @@
       "type": "motoko",
       "main": "backend/violations/main.mo"
     },
+    "meetings": {
+      "type": "motoko",
+      "main": "backend/meetings/main.mo"
+    },
+    "calendar": {
+      "type": "motoko",
+      "main": "backend/calendar/main.mo"
+    },
     "frontend": {
       "type": "assets",
       "source": ["frontend/dist"],
@@ -44,7 +52,9 @@
         "documents",
         "announcements",
         "maintenance",
-        "violations"
+        "violations",
+        "meetings",
+        "calendar"
       ]
     }
   },

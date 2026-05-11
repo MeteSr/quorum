@@ -32,6 +32,8 @@ ALL_CANISTERS=(
   announcements
   maintenance
   violations
+  meetings
+  calendar
 )
 
 if [ $# -gt 0 ]; then
