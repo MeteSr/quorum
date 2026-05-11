@@ -75,7 +75,6 @@ jobs:
 
   # ── Backend: deploy + integration tests ──────────────────────────────────
   test-backend:
-    name: Backend canister tests
     runs-on: ubuntu-latest
     needs: [motoko-check]
     steps:
@@ -123,7 +122,9 @@ jobs:
           ic-wasm --version
 
       - name: Deploy all canisters
-        # deploy.sh starts the icp network, mints local cycles, and deploys all 6 canisters
+        # SKIP_FRONTEND=1: canister tests don't need the frontend build
+        env:
+          SKIP_FRONTEND: '1'
         run: bash scripts/deploy.sh
 
       - name: Run backend integration tests

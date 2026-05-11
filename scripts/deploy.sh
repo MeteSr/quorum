@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-DEPLOY_SCRIPT_VERSION="0.5.0"
+DEPLOY_SCRIPT_VERSION="0.5.1"
 ENV=${1:-local}
 
 echo "============================================"
@@ -205,6 +205,13 @@ else
 fi
 
 # ── Frontend ──────────────────────────────────────────────────────────────────
+if [ "${SKIP_FRONTEND:-0}" = "1" ]; then
+  echo "▶ Skipping frontend build (SKIP_FRONTEND=1)"
+  echo ""
+  echo "✅ Quorum deployed to $ENV"
+  exit 0
+fi
+
 echo "▶ Building frontend..."
 cd frontend
 for canister in "${CANISTERS[@]}"; do
