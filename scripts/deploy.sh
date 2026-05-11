@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-DEPLOY_SCRIPT_VERSION="0.7.5"
+DEPLOY_SCRIPT_VERSION="0.7.6"
 ENV=${1:-local}
 
 echo "============================================"
@@ -185,32 +185,14 @@ if [ "$ENV" = "local" ]; then
   echo "▶ Saving local canister IDs to .dfx/local/canister_ids.json..."
   mkdir -p ".dfx/local"
   python3 - <<'PYEOF'
-import json, subprocess, os, sys
-NAMES = ["members","governance","treasury","documents","announcements","maintenance","violations","meetings","calendar","arc","parking","vendors","discussions"]
+import json, subprocess
 ids = {}
-
-# Strategy 1: read from icp-cli's internal state file (written by icp deploy)
-icp_state = ".icp/data/mappings/local.ids.json"
-if os.path.exists(icp_state):
-    try:
-        src = json.load(open(icp_state))
-        for name in NAMES:
-            cid = src.get(name, "")
-            if cid:
-                ids[name] = {"local": cid}
-        print(f"  ✓ Read {len(ids)} IDs from {icp_state}", file=sys.stderr)
-    except Exception as e:
-        print(f"  ⚠ Could not parse {icp_state}: {e}", file=sys.stderr)
-
-# Strategy 2: fall back to icp canister id for any still-missing canisters
-for name in [n for n in NAMES if n not in ids]:
-    result = subprocess.run(["icp","canister","id",name,"-e","local"],
+for name in ["members","governance","treasury","documents","announcements","maintenance","violations","meetings","calendar","arc","parking","vendors","discussions"]:
+    result = subprocess.run(["icp","canister","status",name,"-e","local","--id-only"],
                             capture_output=True, text=True)
-    cid = (result.stdout.strip() or result.stderr.strip()).split('\n')[0].strip()
-    print(f"  icp canister id {name}: stdout={repr(result.stdout.strip())} stderr={repr(result.stderr.strip())} rc={result.returncode}", file=sys.stderr)
+    cid = result.stdout.strip()
     if cid:
         ids[name] = {"local": cid}
-
 json.dump(ids, open(".dfx/local/canister_ids.json","w"), indent=2)
 print(f"  ✓ Saved {len(ids)} canister IDs")
 PYEOF
