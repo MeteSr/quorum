@@ -2,7 +2,7 @@
 # Quorum — Governance Canister Integration Tests
 # Covers: createProposal, openProposal, castVote (Yes/No/Abstain),
 # finalizeProposal, duplicate vote guard, deadline guard.
-# Run: icp network start -d && bash scripts/deploy.sh && bash backend/governance/test.sh
+# Run: dfx start --background && dfx deploy governance && bash backend/governance/test.sh
 set -euo pipefail
 
 CANISTER="governance"
@@ -10,26 +10,26 @@ echo "============================================"
 echo "  Quorum — Governance Canister Tests"
 echo "============================================"
 
-if ! icp network ping local >/dev/null 2>&1; then
-  echo "❌ Local ICP network is not running. Run: icp network start -d"
+if ! dfx ping >/dev/null 2>&1; then
+  echo "❌ dfx is not running. Run: dfx start --background"
   exit 1
 fi
 
-CANISTER_ID=$(icp canister id "$CANISTER" -e local 2>/dev/null || echo "")
+CANISTER_ID=$(dfx canister id "$CANISTER" 2>/dev/null || echo "")
 if [ -z "$CANISTER_ID" ]; then
   echo "❌ $CANISTER canister not deployed. Run: bash scripts/deploy.sh"
   exit 1
 fi
 
-# Ensure voter identities
+# Ensure voter identities and capture their principals
 for IDENT in quorum-voter-a quorum-voter-b quorum-voter-c; do
-  if ! icp identity list 2>/dev/null | grep -q "^${IDENT}$"; then
-    icp identity new "$IDENT" --storage plaintext 2>/dev/null || true
-  fi
+  dfx identity new "$IDENT" --storage-mode plaintext 2>/dev/null || true
 done
-VOTER_A=$(icp identity principal --identity quorum-voter-a 2>/dev/null || echo "")
-VOTER_B=$(icp identity principal --identity quorum-voter-b 2>/dev/null || echo "")
-VOTER_C=$(icp identity principal --identity quorum-voter-c 2>/dev/null || echo "")
+_PREV=$(dfx identity whoami)
+dfx identity use quorum-voter-a 2>/dev/null || true; VOTER_A=$(dfx identity get-principal)
+dfx identity use quorum-voter-b 2>/dev/null || true; VOTER_B=$(dfx identity get-principal)
+dfx identity use quorum-voter-c 2>/dev/null || true; VOTER_C=$(dfx identity get-principal)
+dfx identity use "$_PREV"
 echo "Voter A: $VOTER_A"
 echo "Voter B: $VOTER_B"
 echo "Voter C: $VOTER_C"
@@ -37,14 +37,13 @@ echo "Voter C: $VOTER_C"
 # ─── [1] createProposal ──────────────────────────────────────────────────────
 echo ""
 echo "── [1] createProposal ──────────────────────────────────────────────────"
-# Voting deadline 1 year from now in nanoseconds
 DEADLINE=$(( ($(date +%s) + 365 * 86400) * 1000000000 ))
-PROP_OUT=$(icp canister call $CANISTER createProposal "(
+PROP_OUT=$(dfx canister call $CANISTER createProposal "(
   \"Repave East Parking Lot\",
   \"The east lot has significant cracking. Estimated cost: \$45,000.\",
   $DEADLINE,
   51
-)" -e local)
+)")
 echo "$PROP_OUT"
 PROP_ID=$(echo "$PROP_OUT" | grep -oP '"PROP_[0-9]+"' | head -1 | tr -d '"')
 echo "  → Proposal ID: $PROP_ID"
@@ -58,7 +57,7 @@ fi
 # ─── [2] openProposal ────────────────────────────────────────────────────────
 echo ""
 echo "── [2] openProposal ────────────────────────────────────────────────────"
-OPEN_OUT=$(icp canister call $CANISTER openProposal "(\"$PROP_ID\")" -e local)
+OPEN_OUT=$(dfx canister call $CANISTER openProposal "(\"$PROP_ID\")")
 echo "$OPEN_OUT"
 if echo "$OPEN_OUT" | grep -q "Open"; then
   echo "  ✓ Proposal is Open"
@@ -70,7 +69,7 @@ fi
 # ─── [3] getOpenProposals ────────────────────────────────────────────────────
 echo ""
 echo "── [3] getOpenProposals ────────────────────────────────────────────────"
-OPEN_LIST=$(icp canister call $CANISTER getOpenProposals -e local)
+OPEN_LIST=$(dfx canister call $CANISTER getOpenProposals)
 echo "$OPEN_LIST"
 if echo "$OPEN_LIST" | grep -q "$PROP_ID"; then
   echo "  ✓ Proposal in open list"
@@ -82,36 +81,36 @@ fi
 # ─── [4] castVote — Yes from voter A ────────────────────────────────────────
 echo ""
 echo "── [4] castVote Yes — voter A ──────────────────────────────────────────"
-icp identity default quorum-voter-a 2>/dev/null || true
-VOTE_A=$(icp canister call $CANISTER castVote "(\"$PROP_ID\", variant { Yes })" -e local)
+dfx identity use quorum-voter-a 2>/dev/null || true
+VOTE_A=$(dfx canister call $CANISTER castVote "(\"$PROP_ID\", variant { Yes })")
 echo "$VOTE_A"
 if echo "$VOTE_A" | grep -q "Yes"; then
   echo "  ✓ Voter A voted Yes"
 else
   echo "  ↳ ❌ Expected Yes vote in response"
-  icp identity default quorum-local 2>/dev/null || true
+  dfx identity use default 2>/dev/null || true
   exit 1
 fi
 
 # ─── [5] castVote — No from voter B ─────────────────────────────────────────
 echo ""
 echo "── [5] castVote No — voter B ───────────────────────────────────────────"
-icp identity default quorum-voter-b 2>/dev/null || true
-icp canister call $CANISTER castVote "(\"$PROP_ID\", variant { No })" -e local
+dfx identity use quorum-voter-b 2>/dev/null || true
+dfx canister call $CANISTER castVote "(\"$PROP_ID\", variant { No })"
 echo "  ✓ Voter B voted No"
 
 # ─── [6] castVote — Abstain from voter C ────────────────────────────────────
 echo ""
 echo "── [6] castVote Abstain — voter C ─────────────────────────────────────"
-icp identity default quorum-voter-c 2>/dev/null || true
-icp canister call $CANISTER castVote "(\"$PROP_ID\", variant { Abstain })" -e local
+dfx identity use quorum-voter-c 2>/dev/null || true
+dfx canister call $CANISTER castVote "(\"$PROP_ID\", variant { Abstain })"
 echo "  ✓ Voter C abstained"
-icp identity default quorum-local 2>/dev/null || true
+dfx identity use default 2>/dev/null || true
 
 # ─── [7] getProposal — check vote counts ────────────────────────────────────
 echo ""
 echo "── [7] getProposal — verify vote counts (1 Yes, 1 No, 1 Abstain) ───────"
-VOTE_CHECK=$(icp canister call $CANISTER getProposal "(\"$PROP_ID\")" -e local)
+VOTE_CHECK=$(dfx canister call $CANISTER getProposal "(\"$PROP_ID\")")
 echo "$VOTE_CHECK"
 if echo "$VOTE_CHECK" | grep -q "yesVotes = 1"; then
   echo "  ✓ yesVotes = 1"
@@ -123,12 +122,12 @@ fi
 # ─── [8] getMyVote ────────────────────────────────────────────────────────────
 echo ""
 echo "── [8] getMyVote — voter A ─────────────────────────────────────────────"
-icp canister call $CANISTER getMyVote "(\"$PROP_ID\", principal \"$VOTER_A\")" -e local
+dfx canister call $CANISTER getMyVote "(\"$PROP_ID\", principal \"$VOTER_A\")"
 
 # ─── [9] finalizeProposal ────────────────────────────────────────────────────
 echo ""
 echo "── [9] finalizeProposal — 1 Yes of 3 total = 33% < 51% → Failed ────────"
-FINAL_OUT=$(icp canister call $CANISTER finalizeProposal "(\"$PROP_ID\")" -e local)
+FINAL_OUT=$(dfx canister call $CANISTER finalizeProposal "(\"$PROP_ID\")")
 echo "$FINAL_OUT"
 if echo "$FINAL_OUT" | grep -q "Failed"; then
   echo "  ✓ Proposal Failed (33% < 51% quorum)"
@@ -140,20 +139,20 @@ fi
 # ─── [10] Create proposal that passes ────────────────────────────────────────
 echo ""
 echo "── [10] Create and pass a proposal (2 Yes of 2 = 100%) ─────────────────"
-PASS_OUT=$(icp canister call $CANISTER createProposal "(
+PASS_OUT=$(dfx canister call $CANISTER createProposal "(
   \"Approve Reserve Fund Contribution\",
   \"Add \$500/unit to reserve fund this quarter.\",
   $DEADLINE,
   51
-)" -e local)
+)")
 PASS_ID=$(echo "$PASS_OUT" | grep -oP '"PROP_[0-9]+"' | head -1 | tr -d '"')
-icp canister call $CANISTER openProposal "(\"$PASS_ID\")" -e local > /dev/null
-icp identity default quorum-voter-a 2>/dev/null || true
-icp canister call $CANISTER castVote "(\"$PASS_ID\", variant { Yes })" -e local > /dev/null
-icp identity default quorum-voter-b 2>/dev/null || true
-icp canister call $CANISTER castVote "(\"$PASS_ID\", variant { Yes })" -e local > /dev/null
-icp identity default quorum-local 2>/dev/null || true
-PASS_FINAL=$(icp canister call $CANISTER finalizeProposal "(\"$PASS_ID\")" -e local)
+dfx canister call $CANISTER openProposal "(\"$PASS_ID\")" > /dev/null
+dfx identity use quorum-voter-a 2>/dev/null || true
+dfx canister call $CANISTER castVote "(\"$PASS_ID\", variant { Yes })" > /dev/null
+dfx identity use quorum-voter-b 2>/dev/null || true
+dfx canister call $CANISTER castVote "(\"$PASS_ID\", variant { Yes })" > /dev/null
+dfx identity use default 2>/dev/null || true
+PASS_FINAL=$(dfx canister call $CANISTER finalizeProposal "(\"$PASS_ID\")")
 echo "$PASS_FINAL"
 if echo "$PASS_FINAL" | grep -q "Passed"; then
   echo "  ✓ Proposal Passed (100% yes votes)"
@@ -166,25 +165,25 @@ fi
 echo ""
 echo "── [V1] duplicate vote → expect AlreadyVoted ───────────────────────────"
 DEADLINE2=$(( ($(date +%s) + 365 * 86400) * 1000000000 ))
-DUP_PROP=$(icp canister call $CANISTER createProposal "(\"Dup Test\", \"test\", $DEADLINE2, 51)" -e local)
+DUP_PROP=$(dfx canister call $CANISTER createProposal "(\"Dup Test\", \"test\", $DEADLINE2, 51)")
 DUP_ID=$(echo "$DUP_PROP" | grep -oP '"PROP_[0-9]+"' | head -1 | tr -d '"')
-icp canister call $CANISTER openProposal "(\"$DUP_ID\")" -e local > /dev/null
-icp identity default quorum-voter-a 2>/dev/null || true
-icp canister call $CANISTER castVote "(\"$DUP_ID\", variant { Yes })" -e local > /dev/null
-icp canister call $CANISTER castVote "(\"$DUP_ID\", variant { No })" -e local \
+dfx canister call $CANISTER openProposal "(\"$DUP_ID\")" > /dev/null
+dfx identity use quorum-voter-a 2>/dev/null || true
+dfx canister call $CANISTER castVote "(\"$DUP_ID\", variant { Yes })" > /dev/null
+dfx canister call $CANISTER castVote "(\"$DUP_ID\", variant { No })" \
   && echo "  ↳ ❌ Expected AlreadyVoted" || echo "  ✓ AlreadyVoted returned"
-icp identity default quorum-local 2>/dev/null || true
+dfx identity use default 2>/dev/null || true
 
 # ─── [V2] castVote on non-Open proposal → NotOpen ───────────────────────────
 echo ""
 echo "── [V2] castVote on finalized proposal → expect NotOpen ─────────────────"
-icp canister call $CANISTER castVote "(\"$PROP_ID\", variant { Yes })" -e local \
+dfx canister call $CANISTER castVote "(\"$PROP_ID\", variant { Yes })" \
   && echo "  ↳ ❌ Expected NotOpen" || echo "  ✓ NotOpen returned for finalized proposal"
 
 # ─── [V3] quorumPercent > 100 → InvalidInput ─────────────────────────────────
 echo ""
 echo "── [V3] quorumPercent 101 → expect InvalidInput ─────────────────────────"
-icp canister call $CANISTER createProposal '("Bad quorum", "test", 9999999999999999999, 101)' -e local \
+dfx canister call $CANISTER createProposal '("Bad quorum", "test", 9999999999999999999, 101)' \
   && echo "  ↳ ❌ Expected InvalidInput" || echo "  ✓ InvalidInput returned for quorum > 100"
 
 echo ""

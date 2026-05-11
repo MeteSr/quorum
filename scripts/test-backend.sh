@@ -18,8 +18,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 # ── Verify replica is running ─────────────────────────────────────────────────
-if ! icp network ping local >/dev/null 2>&1; then
-  echo "❌  Local ICP network is not running. Run: icp network start -d"
+if ! dfx ping >/dev/null 2>&1; then
+  echo "❌  Local dfx replica is not running. Run: dfx start --background"
   exit 1
 fi
 
@@ -64,7 +64,7 @@ for CANISTER in "${CANISTERS[@]}"; do
     continue
   fi
 
-  CANISTER_ID=$(icp canister id "$CANISTER" -e local 2>/dev/null || echo "")
+  CANISTER_ID=$(dfx canister id "$CANISTER" 2>/dev/null || echo "")
   if [ -z "$CANISTER_ID" ]; then
     echo "  ⬜ $CANISTER — not deployed, skipping"
     SKIPPED+=("$CANISTER")

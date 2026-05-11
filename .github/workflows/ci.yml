@@ -84,8 +84,15 @@ jobs:
         with:
           node-version: '20'
 
-      - name: Install icp-cli
-        run: npm install -g @icp-sdk/icp-cli
+      - name: Install dfx
+        # dfx handles cycle fabrication automatically on local replicas.
+        # test-backend.sh calls dfx ping, so dfx must be the active replica.
+        run: |
+          curl -fsSL "https://github.com/dfinity/sdk/releases/download/0.24.3/dfx-x86_64-unknown-linux-gnu.tar.gz" \
+            | tar -xz
+          DFX_BIN=$(find . -name "dfx*" -type f -perm /111 | head -1)
+          sudo install -m 755 "$DFX_BIN" /usr/local/bin/dfx
+          dfx --version
 
       - name: Cache mops packages
         uses: actions/cache@v5
@@ -109,26 +116,17 @@ jobs:
           fi
           "$MOC_BIN" --version
 
-      - name: Install ic-wasm
-        run: |
-          TMP=$(mktemp -d)
-          curl -sSfL --retry 3 --retry-delay 5 \
-            https://github.com/dfinity/ic-wasm/releases/download/0.9.11/ic-wasm-x86_64-unknown-linux-musl.tar.xz \
-            -o "$TMP/ic-wasm.tar.xz"
-          tar -xJf "$TMP/ic-wasm.tar.xz" -C "$TMP"
-          BIN=$(find "$TMP" -name "ic-wasm" -type f | head -1)
-          sudo install -m 755 "$BIN" /usr/local/bin/ic-wasm
-          rm -rf "$TMP"
-          ic-wasm --version
+      - name: Start local replica
+        run: dfx start --clean --background
 
-      - name: Deploy and test
-        # Run in one step so the PocketIC daemon started by deploy.sh stays
-        # alive for test-backend.sh (the process dies when the step's shell exits)
-        env:
-          SKIP_FRONTEND: '1'
+      - name: Deploy canisters
         run: |
-          bash scripts/deploy.sh
-          bash scripts/test-backend.sh
+          for canister in members governance treasury documents announcements maintenance; do
+            dfx deploy "$canister"
+          done
+
+      - name: Run backend tests
+        run: bash scripts/test-backend.sh
 
   # ── Frontend: type check + unit tests + build ─────────────────────────────
   test-frontend:

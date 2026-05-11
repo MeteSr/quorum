@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Quorum — Members Canister Integration Tests
 # Covers: initAdmin, community profile, invite codes, member registration, roles.
-# Run: icp network start -d && bash scripts/deploy.sh && bash backend/members/test.sh
+# Run: dfx start --background && dfx deploy members && bash backend/members/test.sh
 set -euo pipefail
 
 CANISTER="members"
@@ -9,38 +9,39 @@ echo "============================================"
 echo "  Quorum — Members Canister Tests"
 echo "============================================"
 
-if ! icp network ping local >/dev/null 2>&1; then
-  echo "❌ Local ICP network is not running. Run: icp network start -d"
+if ! dfx ping >/dev/null 2>&1; then
+  echo "❌ dfx is not running. Run: dfx start --background"
   exit 1
 fi
 
-CANISTER_ID=$(icp canister id "$CANISTER" -e local 2>/dev/null || echo "")
+CANISTER_ID=$(dfx canister id "$CANISTER" 2>/dev/null || echo "")
 if [ -z "$CANISTER_ID" ]; then
   echo "❌ $CANISTER canister not deployed. Run: bash scripts/deploy.sh"
   exit 1
 fi
 
-# Ensure a second identity
-if ! icp identity list 2>/dev/null | grep -q "^quorum-member-b$"; then
-  icp identity new quorum-member-b --storage plaintext 2>/dev/null || true
-fi
-MEMBER_B=$(icp identity principal --identity quorum-member-b 2>/dev/null || echo "")
+# Ensure a second identity and capture its principal
+dfx identity new quorum-member-b --storage-mode plaintext 2>/dev/null || true
+_PREV=$(dfx identity whoami)
+dfx identity use quorum-member-b 2>/dev/null || true
+MEMBER_B=$(dfx identity get-principal)
+dfx identity use "$_PREV"
 echo "Member B principal: $MEMBER_B"
 
 # ─── [1] initAdmin ───────────────────────────────────────────────────────────
 echo ""
 echo "── [1] initAdmin ───────────────────────────────────────────────────────"
-icp canister call $CANISTER initAdmin -e local || echo "  ↳ Already initialized (ok)"
+dfx canister call $CANISTER initAdmin || echo "  ↳ Already initialized (ok)"
 
 # ─── [2] setCommunityProfile ─────────────────────────────────────────────────
 echo ""
 echo "── [2] setCommunityProfile ─────────────────────────────────────────────"
-PROFILE_OUT=$(icp canister call $CANISTER setCommunityProfile '(
+PROFILE_OUT=$(dfx canister call $CANISTER setCommunityProfile '(
   "Sunrise HOA",
   "100 Sunrise Blvd, Austin TX 78701",
   48,
   "A friendly community of 48 units"
-)' -e local)
+)')
 echo "$PROFILE_OUT"
 if echo "$PROFILE_OUT" | grep -q "Sunrise HOA"; then
   echo "  ✓ Community profile set"
@@ -52,7 +53,7 @@ fi
 # ─── [3] getCommunityProfile ─────────────────────────────────────────────────
 echo ""
 echo "── [3] getCommunityProfile ─────────────────────────────────────────────"
-GET_PROFILE=$(icp canister call $CANISTER getCommunityProfile -e local)
+GET_PROFILE=$(dfx canister call $CANISTER getCommunityProfile)
 echo "$GET_PROFILE"
 if echo "$GET_PROFILE" | grep -q "Sunrise HOA"; then
   echo "  ✓ Profile retrieved"
@@ -64,11 +65,11 @@ fi
 # ─── [4] generateInviteCode ──────────────────────────────────────────────────
 echo ""
 echo "── [4] generateInviteCode ──────────────────────────────────────────────"
-CODE_OUT=$(icp canister call $CANISTER generateInviteCode '(
+CODE_OUT=$(dfx canister call $CANISTER generateInviteCode '(
   "SUNRISE2024",
   10,
   null
-)' -e local)
+)')
 echo "$CODE_OUT"
 if echo "$CODE_OUT" | grep -q "SUNRISE2024"; then
   echo "  ✓ Invite code created"
@@ -80,32 +81,32 @@ fi
 # ─── [5] getInviteCode ───────────────────────────────────────────────────────
 echo ""
 echo "── [5] getInviteCode ───────────────────────────────────────────────────"
-icp canister call $CANISTER getInviteCode '("SUNRISE2024")' -e local
+dfx canister call $CANISTER getInviteCode '("SUNRISE2024")'
 
 # ─── [6] registerMember (member B uses the code) ─────────────────────────────
 echo ""
 echo "── [6] registerMember — member B registers with invite code ─────────────"
-icp identity default quorum-member-b 2>/dev/null || true
-REG_OUT=$(icp canister call $CANISTER registerMember '(
+dfx identity use quorum-member-b 2>/dev/null || true
+REG_OUT=$(dfx canister call $CANISTER registerMember '(
   "12A",
   "Jordan Smith",
   "jordan@sunrise.hoa",
   "SUNRISE2024"
-)' -e local)
+)')
 echo "$REG_OUT"
 if echo "$REG_OUT" | grep -q "Jordan Smith"; then
   echo "  ✓ Member registered"
 else
   echo "  ↳ ❌ Expected registration result"
-  icp identity default quorum-local 2>/dev/null || true
+  dfx identity use default 2>/dev/null || true
   exit 1
 fi
-icp identity default quorum-local 2>/dev/null || true
+dfx identity use default 2>/dev/null || true
 
 # ─── [7] getMember ───────────────────────────────────────────────────────────
 echo ""
 echo "── [7] getMember by principal ──────────────────────────────────────────"
-GET_MEMBER=$(icp canister call $CANISTER getMember "(principal \"$MEMBER_B\")" -e local)
+GET_MEMBER=$(dfx canister call $CANISTER getMember "(principal \"$MEMBER_B\")")
 echo "$GET_MEMBER"
 if echo "$GET_MEMBER" | grep -q "Jordan Smith"; then
   echo "  ✓ Member retrieved"
@@ -117,8 +118,8 @@ fi
 # ─── [8] getAllMembers / getActiveMembers ────────────────────────────────────
 echo ""
 echo "── [8] getAllMembers / getActiveMembers ────────────────────────────────"
-ALL=$(icp canister call $CANISTER getAllMembers -e local)
-ACTIVE=$(icp canister call $CANISTER getActiveMembers -e local)
+ALL=$(dfx canister call $CANISTER getAllMembers)
+ACTIVE=$(dfx canister call $CANISTER getActiveMembers)
 echo "All: $ALL"
 echo "Active: $ACTIVE"
 if echo "$ALL" | grep -q "Jordan Smith"; then
@@ -131,10 +132,10 @@ fi
 # ─── [9] assignRole ──────────────────────────────────────────────────────────
 echo ""
 echo "── [9] assignRole — promote member B to BoardMember ────────────────────"
-ROLE_OUT=$(icp canister call $CANISTER assignRole "(
+ROLE_OUT=$(dfx canister call $CANISTER assignRole "(
   principal \"$MEMBER_B\",
   variant { BoardMember }
-)" -e local)
+)")
 echo "$ROLE_OUT"
 if echo "$ROLE_OUT" | grep -q "ok"; then
   echo "  ✓ Role assigned"
@@ -146,7 +147,7 @@ fi
 # ─── [10] isBoardMember ──────────────────────────────────────────────────────
 echo ""
 echo "── [10] isBoardMember ──────────────────────────────────────────────────"
-IS_BOARD=$(icp canister call $CANISTER isBoardMember "(principal \"$MEMBER_B\")" -e local)
+IS_BOARD=$(dfx canister call $CANISTER isBoardMember "(principal \"$MEMBER_B\")")
 echo "$IS_BOARD"
 if echo "$IS_BOARD" | grep -q "true"; then
   echo "  ✓ Member B is now a board member"
@@ -158,31 +159,31 @@ fi
 # ─── [V1] registerMember again → AlreadyExists ───────────────────────────────
 echo ""
 echo "── [V1] registerMember again → expect AlreadyExists ────────────────────"
-icp identity default quorum-member-b 2>/dev/null || true
-icp canister call $CANISTER registerMember '(
+dfx identity use quorum-member-b 2>/dev/null || true
+dfx canister call $CANISTER registerMember '(
   "12A",
   "Jordan Again",
   "jordan2@sunrise.hoa",
   "SUNRISE2024"
-)' -e local && echo "  ↳ ❌ Expected AlreadyExists" || echo "  ✓ AlreadyExists returned"
-icp identity default quorum-local 2>/dev/null || true
+)' && echo "  ↳ ❌ Expected AlreadyExists" || echo "  ✓ AlreadyExists returned"
+dfx identity use default 2>/dev/null || true
 
 # ─── [V2] setCommunityProfile — empty name → InvalidInput ────────────────────
 echo ""
 echo "── [V2] setCommunityProfile empty name → expect InvalidInput ─────────────"
-icp canister call $CANISTER setCommunityProfile '("", "addr", 10, "desc")' -e local \
+dfx canister call $CANISTER setCommunityProfile '("", "addr", 10, "desc")' \
   && echo "  ↳ ❌ Expected InvalidInput" || echo "  ✓ InvalidInput returned for empty name"
 
 # ─── [V3] generateInviteCode — duplicate → AlreadyExists ────────────────────
 echo ""
 echo "── [V3] generateInviteCode duplicate → expect AlreadyExists ─────────────"
-icp canister call $CANISTER generateInviteCode '("SUNRISE2024", 5, null)' -e local \
+dfx canister call $CANISTER generateInviteCode '("SUNRISE2024", 5, null)' \
   && echo "  ↳ ❌ Expected AlreadyExists" || echo "  ✓ AlreadyExists returned for duplicate code"
 
 # ─── [V4] registerMember with invalid code ───────────────────────────────────
 echo ""
 echo "── [V4] registerMember invalid code → expect InvalidCode ─────────────────"
-icp canister call $CANISTER registerMember '("5B", "X", "x@y.com", "BADCODE")' -e local \
+dfx canister call $CANISTER registerMember '("5B", "X", "x@y.com", "BADCODE")' \
   && echo "  ↳ ❌ Expected InvalidCode" || echo "  ✓ InvalidCode returned for bad invite"
 
 echo ""
