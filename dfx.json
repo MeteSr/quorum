@@ -26,6 +26,10 @@
       "type": "motoko",
       "main": "backend/announcements/main.mo"
     },
+    "maintenance": {
+      "type": "motoko",
+      "main": "backend/maintenance/main.mo"
+    },
     "violations": {
       "type": "motoko",
       "main": "backend/violations/main.mo"
@@ -39,6 +43,7 @@
         "treasury",
         "documents",
         "announcements",
+        "maintenance",
         "violations"
       ]
     }

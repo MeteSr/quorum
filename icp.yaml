@@ -34,6 +34,13 @@ canisters:
         main: backend/announcements/main.mo
         args: ""
 
+  - name: maintenance
+    recipe:
+      type: "@dfinity/motoko@v4.0.0"
+      configuration:
+        main: backend/maintenance/main.mo
+        args: ""
+
   - name: violations
     recipe:
       type: "@dfinity/motoko@v4.0.0"

@@ -14,6 +14,7 @@ export default defineConfig({
     CANISTER_ID_TREASURY:      JSON.stringify(process.env.CANISTER_ID_TREASURY      || ""),
     CANISTER_ID_DOCUMENTS:     JSON.stringify(process.env.CANISTER_ID_DOCUMENTS     || ""),
     CANISTER_ID_ANNOUNCEMENTS: JSON.stringify(process.env.CANISTER_ID_ANNOUNCEMENTS || ""),
+    CANISTER_ID_MAINTENANCE:   JSON.stringify(process.env.CANISTER_ID_MAINTENANCE   || ""),
     CANISTER_ID_VIOLATIONS:    JSON.stringify(process.env.CANISTER_ID_VIOLATIONS    || ""),
   },
   server: {
