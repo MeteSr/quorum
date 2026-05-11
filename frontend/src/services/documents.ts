@@ -22,28 +22,30 @@ export function idlFactory({ IDL }: { IDL: any }) {
   });
 
   const DocumentMeta = IDL.Record({
-    id:          IDL.Text,
-    title:       IDL.Text,
-    category:    DocCategory,
-    visibility:  Visibility,
-    mimeType:    IDL.Text,
-    sizeBytes:   IDL.Nat,
-    uploadedBy:  IDL.Principal,
-    uploadedAt:  IDL.Int,
-    description: IDL.Text,
+    id:                      IDL.Text,
+    title:                   IDL.Text,
+    category:                DocCategory,
+    visibility:              Visibility,
+    mimeType:                IDL.Text,
+    sizeBytes:               IDL.Nat,
+    uploadedBy:              IDL.Principal,
+    uploadedAt:              IDL.Int,
+    description:             IDL.Text,
+    requiresAcknowledgment:  IDL.Bool,
   });
 
   const Document = IDL.Record({
-    id:          IDL.Text,
-    title:       IDL.Text,
-    category:    DocCategory,
-    visibility:  Visibility,
-    content:     IDL.Vec(IDL.Nat8),
-    mimeType:    IDL.Text,
-    sizeBytes:   IDL.Nat,
-    uploadedBy:  IDL.Principal,
-    uploadedAt:  IDL.Int,
-    description: IDL.Text,
+    id:                      IDL.Text,
+    title:                   IDL.Text,
+    category:                DocCategory,
+    visibility:              Visibility,
+    content:                 IDL.Vec(IDL.Nat8),
+    mimeType:                IDL.Text,
+    sizeBytes:               IDL.Nat,
+    uploadedBy:              IDL.Principal,
+    uploadedAt:              IDL.Int,
+    description:             IDL.Text,
+    requiresAcknowledgment:  IDL.Bool,
   });
 
   const Error = IDL.Variant({
@@ -55,15 +57,20 @@ export function idlFactory({ IDL }: { IDL: any }) {
 
   const ResultMeta = IDL.Variant({ ok: DocumentMeta, err: Error });
   const ResultUnit = IDL.Variant({ ok: IDL.Null,     err: Error });
+  const AckRecord  = IDL.Tuple(IDL.Text, IDL.Int);
 
   return IDL.Service({
-    uploadDocument:           IDL.Func([IDL.Text, DocCategory, Visibility, IDL.Vec(IDL.Nat8), IDL.Text, IDL.Text], [ResultMeta], []),
-    deleteDocument:           IDL.Func([IDL.Text],                          [ResultUnit],                  []),
-    getDocument:              IDL.Func([IDL.Text],                          [IDL.Opt(Document)],            ["query"]),
-    getDocumentMeta:          IDL.Func([IDL.Text],                          [IDL.Opt(DocumentMeta)],        ["query"]),
-    getDocumentsByCategory:   IDL.Func([DocCategory],                       [IDL.Vec(DocumentMeta)],        ["query"]),
-    getAllPublicDocumentsMeta: IDL.Func([],                                  [IDL.Vec(DocumentMeta)],        ["query"]),
-    getAllDocumentsMeta:       IDL.Func([],                                  [IDL.Vec(DocumentMeta)],        ["query"]),
+    uploadDocument:             IDL.Func([IDL.Text, DocCategory, Visibility, IDL.Vec(IDL.Nat8), IDL.Text, IDL.Text], [ResultMeta], []),
+    deleteDocument:             IDL.Func([IDL.Text],                          [ResultUnit],                  []),
+    setRequiresAcknowledgment:  IDL.Func([IDL.Text, IDL.Bool],                [ResultMeta],                  []),
+    acknowledgeDocument:        IDL.Func([IDL.Text],                          [ResultUnit],                  []),
+    getDocument:                IDL.Func([IDL.Text],                          [IDL.Opt(Document)],            ["query"]),
+    getDocumentMeta:            IDL.Func([IDL.Text],                          [IDL.Opt(DocumentMeta)],        ["query"]),
+    getDocumentsByCategory:     IDL.Func([DocCategory],                       [IDL.Vec(DocumentMeta)],        ["query"]),
+    getAllPublicDocumentsMeta:   IDL.Func([],                                  [IDL.Vec(DocumentMeta)],        ["query"]),
+    getAllDocumentsMeta:         IDL.Func([],                                  [IDL.Vec(DocumentMeta)],        ["query"]),
+    getAcknowledgmentStatus:    IDL.Func([IDL.Text],                          [IDL.Vec(AckRecord)],           ["query"]),
+    getMyAcknowledgedDocs:      IDL.Func([],                                  [IDL.Vec(IDL.Text)],            ["query"]),
   });
 }
 
@@ -80,15 +87,16 @@ export type DocCategory =
 export type Visibility = { AllMembers: null } | { BoardOnly: null };
 
 export interface DocumentMeta {
-  id:          string;
-  title:       string;
-  category:    DocCategory;
-  visibility:  Visibility;
-  mimeType:    string;
-  sizeBytes:   bigint;
-  uploadedBy:  import("@dfinity/principal").Principal;
-  uploadedAt:  bigint;
-  description: string;
+  id:                      string;
+  title:                   string;
+  category:                DocCategory;
+  visibility:              Visibility;
+  mimeType:                string;
+  sizeBytes:               bigint;
+  uploadedBy:              import("@dfinity/principal").Principal;
+  uploadedAt:              bigint;
+  description:             string;
+  requiresAcknowledgment:  boolean;
 }
 
 export type DocumentsError =
@@ -105,7 +113,7 @@ async function createActor() {
   return Actor.createActor(idlFactory, { agent, canisterId: CANISTER_ID_DOCUMENTS });
 }
 
-// ─── Service ──────────────────────────────────────────────────────────────────
+// ─── Document service ─────────────────────────────────────────────────────────
 
 export async function getAllPublicDocumentsMeta(): Promise<DocumentMeta[]> {
   const actor = await createActor() as any;
@@ -142,4 +150,37 @@ export async function deleteDocument(id: string): Promise<{ ok: null } | { err: 
   const actor = await createActor() as any;
   if (!actor) return { err: { NotFound: null } };
   return actor.deleteDocument(id);
+}
+
+// ─── Acknowledgment service ───────────────────────────────────────────────────
+
+export async function setRequiresAcknowledgment(
+  docId:    string,
+  required: boolean
+): Promise<{ ok: DocumentMeta } | { err: DocumentsError }> {
+  const actor = await createActor() as any;
+  if (!actor) return { err: { NotFound: null } };
+  return actor.setRequiresAcknowledgment(docId, required);
+}
+
+export async function acknowledgeDocument(
+  docId: string
+): Promise<{ ok: null } | { err: DocumentsError }> {
+  const actor = await createActor() as any;
+  if (!actor) return { err: { NotFound: null } };
+  return actor.acknowledgeDocument(docId);
+}
+
+export async function getAcknowledgmentStatus(
+  docId: string
+): Promise<[string, bigint][]> {
+  const actor = await createActor() as any;
+  if (!actor) return [];
+  return actor.getAcknowledgmentStatus(docId);
+}
+
+export async function getMyAcknowledgedDocs(): Promise<string[]> {
+  const actor = await createActor() as any;
+  if (!actor) return [];
+  return actor.getMyAcknowledgedDocs();
 }

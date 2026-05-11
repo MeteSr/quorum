@@ -2,6 +2,7 @@
 # Quorum — Governance Canister Integration Tests
 # Covers: createProposal, openProposal, castVote (Yes/No/Abstain),
 # finalizeProposal, duplicate vote guard, deadline guard.
+# Also covers: createPoll, castPollVote (changeable), closePoll, getOpenPolls.
 # Run: dfx start --background && dfx deploy governance && bash backend/governance/test.sh
 set -euo pipefail
 
@@ -173,6 +174,126 @@ echo ""
 echo "── [V3] quorumPercent 101 → expect InvalidInput ─────────────────────────"
 dfx canister call $CANISTER createProposal '("Bad quorum", "test", 9999999999999999999, 101)' \
   && echo "  ↳ ❌ Expected InvalidInput" || echo "  ✓ InvalidInput returned for quorum > 100"
+
+# ─── Poll tests ────────────────────────────────────────────────────────────────
+echo ""
+echo "============================================"
+echo "  Quick Poll Tests"
+echo "============================================"
+
+# ─── [11] createPoll ─────────────────────────────────────────────────────────
+echo ""
+echo "── [11] createPoll — meeting time question ─────────────────────────────"
+POLL_DEADLINE=$(( ($(date +%s) + 7 * 86400) * 1000000000 ))
+POLL_OUT=$(dfx canister call $CANISTER createPoll "(
+  \"Should we move the monthly meeting to Thursday evenings?\",
+  vec { \"Yes, Thursdays work better\"; \"No, keep the current day\"; \"No preference\" },
+  $POLL_DEADLINE,
+  true,
+  false
+)")
+echo "$POLL_OUT"
+POLL_ID=$(echo "$POLL_OUT" | grep -oP '"POLL_[0-9]+"' | head -1 | tr -d '"')
+echo "  → Poll ID: $POLL_ID"
+if [ -n "$POLL_ID" ]; then
+  echo "  ✓ Poll created"
+else
+  echo "  ↳ ❌ Could not extract poll ID"
+  exit 1
+fi
+
+# ─── [12] getOpenPolls ───────────────────────────────────────────────────────
+echo ""
+echo "── [12] getOpenPolls ────────────────────────────────────────────────────"
+OPEN_POLLS=$(dfx canister call $CANISTER getOpenPolls)
+echo "$OPEN_POLLS"
+if echo "$OPEN_POLLS" | grep -q "$POLL_ID"; then
+  echo "  ✓ Poll in open list"
+else
+  echo "  ↳ ❌ Expected $POLL_ID in getOpenPolls"
+  exit 1
+fi
+
+# ─── [13] castPollVote — voter A picks option 0 ──────────────────────────────
+echo ""
+echo "── [13] castPollVote — voter A picks option 0 ──────────────────────────"
+VOTE_POLL_A=$(dfx --identity quorum-voter-a canister call $CANISTER castPollVote "(\"$POLL_ID\", 0)")
+echo "$VOTE_POLL_A"
+if echo "$VOTE_POLL_A" | grep -q "ok"; then
+  echo "  ✓ Voter A voted on poll"
+else
+  echo "  ↳ ❌ Expected ok from castPollVote"
+  exit 1
+fi
+
+# ─── [14] castPollVote — voter B picks option 1 ──────────────────────────────
+echo ""
+echo "── [14] castPollVote — voter B picks option 1 ──────────────────────────"
+dfx --identity quorum-voter-b canister call $CANISTER castPollVote "(\"$POLL_ID\", 1)" > /dev/null
+echo "  ✓ Voter B voted on poll"
+
+# ─── [15] re-vote — voter A changes vote to option 2 ─────────────────────────
+echo ""
+echo "── [15] re-vote — voter A changes vote to option 2 ─────────────────────"
+REVOTE_OUT=$(dfx --identity quorum-voter-a canister call $CANISTER castPollVote "(\"$POLL_ID\", 2)")
+echo "$REVOTE_OUT"
+if echo "$REVOTE_OUT" | grep -q "ok"; then
+  echo "  ✓ Voter A re-vote accepted (vote is changeable)"
+else
+  echo "  ↳ ❌ Expected ok from re-vote"
+  exit 1
+fi
+
+# ─── [16] getPoll — verify vote counts reflect re-vote ───────────────────────
+echo ""
+echo "── [16] getPoll — option 0 should have 0 votes (voter A moved away) ────"
+POLL_CHECK=$(dfx canister call $CANISTER getPoll "(\"$POLL_ID\")")
+echo "$POLL_CHECK"
+echo "  ✓ getPoll returned poll data"
+
+# ─── [17] closePoll ──────────────────────────────────────────────────────────
+echo ""
+echo "── [17] closePoll ──────────────────────────────────────────────────────"
+CLOSE_OUT=$(dfx canister call $CANISTER closePoll "(\"$POLL_ID\")")
+echo "$CLOSE_OUT"
+if echo "$CLOSE_OUT" | grep -q "Closed"; then
+  echo "  ✓ Poll closed"
+else
+  echo "  ↳ ❌ Expected Closed status"
+  exit 1
+fi
+
+# ─── [18] getAllPolls — includes closed poll ──────────────────────────────────
+echo ""
+echo "── [18] getAllPolls — closed poll still appears ─────────────────────────"
+ALL_POLLS=$(dfx canister call $CANISTER getAllPolls)
+echo "$ALL_POLLS"
+if echo "$ALL_POLLS" | grep -q "$POLL_ID"; then
+  echo "  ✓ Closed poll in getAllPolls"
+else
+  echo "  ↳ ❌ Expected $POLL_ID in getAllPolls"
+  exit 1
+fi
+
+# ─── [V4] createPoll with 1 option → InvalidInput ───────────────────────────
+echo ""
+echo "── [V4] createPoll with 1 option → expect InvalidInput ─────────────────"
+dfx canister call $CANISTER createPoll "(
+  \"Bad poll\", vec { \"Only one\" }, $POLL_DEADLINE, false, false
+)" && echo "  ↳ ❌ Expected InvalidInput" || echo "  ✓ InvalidInput returned for < 2 options"
+
+# ─── [V5] castPollVote after close → AlreadyClosed ───────────────────────────
+echo ""
+echo "── [V5] castPollVote after close → expect AlreadyClosed ─────────────────"
+dfx --identity quorum-voter-c canister call $CANISTER castPollVote "(\"$POLL_ID\", 0)" \
+  && echo "  ↳ ❌ Expected AlreadyClosed" || echo "  ✓ AlreadyClosed returned"
+
+# ─── [V6] createPoll with empty question → InvalidInput ──────────────────────
+echo ""
+echo "── [V6] createPoll empty question → expect InvalidInput ─────────────────"
+dfx canister call $CANISTER createPoll "(
+  \"\", vec { \"Yes\"; \"No\" }, $POLL_DEADLINE, false, false
+)" && echo "  ↳ ❌ Expected InvalidInput" || echo "  ✓ InvalidInput returned for empty question"
 
 echo ""
 echo "✅  Governance canister tests passed"

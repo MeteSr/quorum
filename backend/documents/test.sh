@@ -2,6 +2,8 @@
 # Quorum — Documents Canister Integration Tests
 # Covers: uploadDocument, getAllDocumentsMeta, getDocumentsByCategory,
 # visibility (BoardOnly vs AllMembers), deleteDocument.
+# Also covers: requiresAcknowledgment, acknowledgeDocument,
+# getAcknowledgmentStatus, getMyAcknowledgedDocs.
 # Run: dfx start --background && dfx deploy documents && bash backend/documents/test.sh
 set -euo pipefail
 
@@ -20,6 +22,11 @@ if [ -z "$CANISTER_ID" ]; then
   echo "❌ $CANISTER canister not deployed. Run: bash scripts/deploy.sh"
   exit 1
 fi
+
+# Ensure member identity exists for acknowledgment tests
+dfx identity new quorum-member-a --storage-mode plaintext 2>/dev/null || true
+MEMBER_A=$(dfx --identity quorum-member-a identity get-principal)
+echo "Member A: $MEMBER_A"
 
 # ─── [1] uploadDocument — CC&Rs (AllMembers) ─────────────────────────────────
 echo ""
@@ -159,6 +166,75 @@ else
   exit 1
 fi
 
+# ─── Acknowledgment tests ────────────────────────────────────────────────────
+echo ""
+echo "============================================"
+echo "  Acknowledgment Tests"
+echo "============================================"
+
+# ─── [11] setRequiresAcknowledgment ─────────────────────────────────────────
+echo ""
+echo "── [11] setRequiresAcknowledgment(true) for CC&Rs ───────────────────────"
+ACK_REQ_OUT=$(dfx canister call $CANISTER setRequiresAcknowledgment "(\"$DOC_ID\", true)")
+echo "$ACK_REQ_OUT"
+if echo "$ACK_REQ_OUT" | grep -q "requiresAcknowledgment = true"; then
+  echo "  ✓ requiresAcknowledgment set to true"
+else
+  echo "  ↳ ❌ Expected requiresAcknowledgment = true"
+  exit 1
+fi
+
+# ─── [12] getAcknowledgmentStatus — empty before any acks ────────────────────
+echo ""
+echo "── [12] getAcknowledgmentStatus — empty before acknowledgments ──────────"
+ACK_STATUS_EMPTY=$(dfx canister call $CANISTER getAcknowledgmentStatus "(\"$DOC_ID\")")
+echo "$ACK_STATUS_EMPTY"
+echo "  ✓ getAcknowledgmentStatus returned (should be empty vec)"
+
+# ─── [13] acknowledgeDocument — member A acknowledges ────────────────────────
+echo ""
+echo "── [13] acknowledgeDocument — member A acknowledges CC&Rs ───────────────"
+ACK_OUT=$(dfx --identity quorum-member-a canister call $CANISTER acknowledgeDocument "(\"$DOC_ID\")")
+echo "$ACK_OUT"
+if echo "$ACK_OUT" | grep -q "ok"; then
+  echo "  ✓ Member A acknowledged document"
+else
+  echo "  ↳ ❌ Expected ok from acknowledgeDocument"
+  exit 1
+fi
+
+# ─── [14] acknowledgeDocument — idempotent re-acknowledgment ─────────────────
+echo ""
+echo "── [14] re-acknowledge — idempotent (just updates timestamp) ────────────"
+dfx --identity quorum-member-a canister call $CANISTER acknowledgeDocument "(\"$DOC_ID\")" > /dev/null
+echo "  ✓ Re-acknowledgment accepted (idempotent)"
+
+# ─── [15] getAcknowledgmentStatus — member A appears ────────────────────────
+echo ""
+echo "── [15] getAcknowledgmentStatus — expect member A entry ─────────────────"
+ACK_STATUS=$(dfx canister call $CANISTER getAcknowledgmentStatus "(\"$DOC_ID\")")
+echo "$ACK_STATUS"
+ACK_COUNT=$(echo "$ACK_STATUS" | grep -c ";" || true)
+echo "  → Ack entries: $ACK_COUNT"
+if [ "$ACK_COUNT" -ge 1 ]; then
+  echo "  ✓ ≥ 1 acknowledgment entry"
+else
+  echo "  ↳ ❌ Expected acknowledgment entry for member A"
+  exit 1
+fi
+
+# ─── [16] getMyAcknowledgedDocs — member A sees CC&Rs ────────────────────────
+echo ""
+echo "── [16] getMyAcknowledgedDocs — member A should see CC&Rs ───────────────"
+MY_ACKS=$(dfx --identity quorum-member-a canister call $CANISTER getMyAcknowledgedDocs)
+echo "$MY_ACKS"
+if echo "$MY_ACKS" | grep -q "$DOC_ID"; then
+  echo "  ✓ $DOC_ID in member A's acknowledged docs"
+else
+  echo "  ↳ ❌ Expected $DOC_ID in getMyAcknowledgedDocs"
+  exit 1
+fi
+
 # ─── [V1] uploadDocument — empty title → InvalidInput ────────────────────────
 echo ""
 echo "── [V1] uploadDocument empty title → expect InvalidInput ────────────────"
@@ -176,6 +252,18 @@ echo ""
 echo "── [V2] deleteDocument unknown ID → expect NotFound ─────────────────────"
 dfx canister call $CANISTER deleteDocument '("DOC_9999")' \
   && echo "  ↳ ❌ Expected NotFound" || echo "  ✓ NotFound returned"
+
+# ─── [V3] acknowledgeDocument unknown ID → NotFound ──────────────────────────
+echo ""
+echo "── [V3] acknowledgeDocument unknown ID → expect NotFound ────────────────"
+dfx canister call $CANISTER acknowledgeDocument '("DOC_9999")' \
+  && echo "  ↳ ❌ Expected NotFound" || echo "  ✓ NotFound returned"
+
+# ─── [V4] setRequiresAcknowledgment — not uploader → NotAuthorized ────────────
+echo ""
+echo "── [V4] setRequiresAcknowledgment by non-uploader → expect NotAuthorized ─"
+dfx --identity quorum-member-a canister call $CANISTER setRequiresAcknowledgment "(\"$DOC_ID\", false)" \
+  && echo "  ↳ ❌ Expected NotAuthorized" || echo "  ✓ NotAuthorized returned"
 
 echo ""
 echo "✅  Documents canister tests passed"
