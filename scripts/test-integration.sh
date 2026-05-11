@@ -43,6 +43,7 @@ CANISTERS=(
 )
 
 echo "▶ Reading canister IDs…"
+cd "$ROOT_DIR"
 for canister in "${CANISTERS[@]}"; do
   _id=$(icp canister id "$canister" -e local 2>/dev/null || echo "")
   if [ -n "$_id" ]; then
