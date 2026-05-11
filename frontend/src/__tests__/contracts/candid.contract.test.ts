@@ -88,12 +88,18 @@ describe("governance IDL factory", () => {
 
   test("exposes all expected methods", () => {
     const expected = [
+      "castPollVote",
       "castVote",
+      "closePoll",
+      "createPoll",
       "createProposal",
       "finalizeProposal",
+      "getAllPolls",
       "getAllProposals",
       "getMyVote",
+      "getOpenPolls",
       "getOpenProposals",
+      "getPoll",
       "getProposal",
       "openProposal",
       "setMembersCanisterId",
@@ -117,6 +123,26 @@ describe("governance IDL factory", () => {
     const m = methods.get("getMyVote")!;
     expect(m.isQuery).toBe(true);
     expect(m.argTypes).toHaveLength(2);
+  });
+
+  test("createPoll is an update call with 5 args", () => {
+    const m = methods.get("createPoll")!;
+    expect(m.isQuery).toBe(false);
+    expect(m.argTypes).toHaveLength(5);
+  });
+
+  test("castPollVote is an update call with 2 args", () => {
+    const m = methods.get("castPollVote")!;
+    expect(m.isQuery).toBe(false);
+    expect(m.argTypes).toHaveLength(2);
+  });
+
+  test("getOpenPolls is a query", () => {
+    expect(methods.get("getOpenPolls")!.isQuery).toBe(true);
+  });
+
+  test("closePoll is an update call", () => {
+    expect(methods.get("closePoll")!.isQuery).toBe(false);
   });
 });
 
@@ -163,12 +189,16 @@ describe("documents IDL factory", () => {
 
   test("exposes all expected methods", () => {
     const expected = [
+      "acknowledgeDocument",
       "deleteDocument",
+      "getAcknowledgmentStatus",
       "getAllDocumentsMeta",
       "getAllPublicDocumentsMeta",
       "getDocument",
       "getDocumentMeta",
       "getDocumentsByCategory",
+      "getMyAcknowledgedDocs",
+      "setRequiresAcknowledgment",
       "uploadDocument",
     ];
     expect([...methods.keys()].sort()).toEqual(expected);
@@ -188,6 +218,28 @@ describe("documents IDL factory", () => {
 
   test("uploadDocument takes 6 args", () => {
     expect(methods.get("uploadDocument")!.argTypes).toHaveLength(6);
+  });
+
+  test("acknowledgeDocument is an update call with 1 arg", () => {
+    const m = methods.get("acknowledgeDocument")!;
+    expect(m.isQuery).toBe(false);
+    expect(m.argTypes).toHaveLength(1);
+  });
+
+  test("getAcknowledgmentStatus is a query with 1 arg", () => {
+    const m = methods.get("getAcknowledgmentStatus")!;
+    expect(m.isQuery).toBe(true);
+    expect(m.argTypes).toHaveLength(1);
+  });
+
+  test("setRequiresAcknowledgment is an update call with 2 args", () => {
+    const m = methods.get("setRequiresAcknowledgment")!;
+    expect(m.isQuery).toBe(false);
+    expect(m.argTypes).toHaveLength(2);
+  });
+
+  test("getMyAcknowledgedDocs is a query", () => {
+    expect(methods.get("getMyAcknowledgedDocs")!.isQuery).toBe(true);
   });
 });
 

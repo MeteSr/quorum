@@ -15,31 +15,42 @@ import {
   getAllDocumentsMeta,
   getDocumentsByCategory,
   uploadDocument,
+  acknowledgeDocument,
+  getAcknowledgmentStatus,
+  setRequiresAcknowledgment,
+  getMyAcknowledgedDocs,
 } from "@/services/documents";
 import type { DocCategory } from "@/services/documents";
 
 const MOCK_DOC_META: any = {
-  id:          "doc-1",
-  title:       "2024 CC&Rs",
-  category:    { GoverningDocuments: null },
-  visibility:  { AllMembers: null },
-  mimeType:    "application/pdf",
-  sizeBytes:   BigInt(102400),
-  uploadedBy:  { toText: () => "board-principal" } as any,
-  uploadedAt:  BigInt(1_700_000_000_000_000_000),
-  description: "Community CC&Rs updated 2024",
+  id:                      "doc-1",
+  title:                   "2024 CC&Rs",
+  category:                { GoverningDocuments: null },
+  visibility:              { AllMembers: null },
+  mimeType:                "application/pdf",
+  sizeBytes:               BigInt(102400),
+  uploadedBy:              { toText: () => "board-principal" } as any,
+  uploadedAt:              BigInt(1_700_000_000_000_000_000),
+  description:             "Community CC&Rs updated 2024",
+  requiresAcknowledgment:  false,
 };
 
 function makeMockActor(overrides: Record<string, any> = {}) {
   return {
-    getAllPublicDocumentsMeta: vi.fn().mockResolvedValue([MOCK_DOC_META]),
-    getAllDocumentsMeta:       vi.fn().mockResolvedValue([MOCK_DOC_META]),
-    getDocumentsByCategory:   vi.fn().mockResolvedValue([MOCK_DOC_META]),
-    uploadDocument:           vi.fn().mockResolvedValue({ ok: MOCK_DOC_META }),
-    deleteDocument:           vi.fn().mockResolvedValue({ ok: null }),
+    getAllPublicDocumentsMeta:   vi.fn().mockResolvedValue([MOCK_DOC_META]),
+    getAllDocumentsMeta:         vi.fn().mockResolvedValue([MOCK_DOC_META]),
+    getDocumentsByCategory:     vi.fn().mockResolvedValue([MOCK_DOC_META]),
+    uploadDocument:             vi.fn().mockResolvedValue({ ok: MOCK_DOC_META }),
+    deleteDocument:             vi.fn().mockResolvedValue({ ok: null }),
+    setRequiresAcknowledgment:  vi.fn().mockResolvedValue({ ok: { ...MOCK_DOC_META, requiresAcknowledgment: true } }),
+    acknowledgeDocument:        vi.fn().mockResolvedValue({ ok: null }),
+    getAcknowledgmentStatus:    vi.fn().mockResolvedValue([["aaaaa-bbbbb-cai", BigInt(1_700_000_000_000_000_000)]]),
+    getMyAcknowledgedDocs:      vi.fn().mockResolvedValue(["doc-1"]),
     ...overrides,
   };
 }
+
+// ─── Existing document tests ─────────────────────────────────────────────────
 
 describe("documents service — getAllPublicDocumentsMeta", () => {
   beforeEach(() => vi.mocked(Actor.createActor).mockReturnValue(makeMockActor() as any));
@@ -65,6 +76,12 @@ describe("documents service — getAllDocumentsMeta", () => {
     const docs = await getAllDocumentsMeta();
     expect(docs).toHaveLength(1);
     expect(docs[0].category).toEqual({ GoverningDocuments: null });
+  });
+
+  it("includes requiresAcknowledgment field", async () => {
+    const docs = await getAllDocumentsMeta();
+    expect(docs[0]).toHaveProperty("requiresAcknowledgment");
+    expect(docs[0].requiresAcknowledgment).toBe(false);
   });
 });
 
@@ -108,5 +125,87 @@ describe("documents service — uploadDocument", () => {
     );
     const result = await uploadDocument("Title", { Other: null }, { AllMembers: null }, new Uint8Array(), "text/plain", "");
     expect((result as any).err).toHaveProperty("NotAuthorized");
+  });
+});
+
+// ─── Acknowledgment tests ─────────────────────────────────────────────────────
+
+describe("documents service — setRequiresAcknowledgment", () => {
+  beforeEach(() => vi.mocked(Actor.createActor).mockReturnValue(makeMockActor() as any));
+
+  it("returns ok with updated document meta (requiresAcknowledgment = true)", async () => {
+    const result = await setRequiresAcknowledgment("doc-1", true);
+    expect(result).toHaveProperty("ok");
+    expect((result as any).ok.requiresAcknowledgment).toBe(true);
+  });
+
+  it("returns err when caller is not the uploader", async () => {
+    vi.mocked(Actor.createActor).mockReturnValue(
+      makeMockActor({ setRequiresAcknowledgment: vi.fn().mockResolvedValue({ err: { NotAuthorized: null } }) }) as any
+    );
+    const result = await setRequiresAcknowledgment("doc-1", true);
+    expect((result as any).err).toHaveProperty("NotAuthorized");
+  });
+
+  it("returns err when document does not exist", async () => {
+    vi.mocked(Actor.createActor).mockReturnValue(
+      makeMockActor({ setRequiresAcknowledgment: vi.fn().mockResolvedValue({ err: { NotFound: null } }) }) as any
+    );
+    const result = await setRequiresAcknowledgment("doc-9999", true);
+    expect((result as any).err).toHaveProperty("NotFound");
+  });
+});
+
+describe("documents service — acknowledgeDocument", () => {
+  beforeEach(() => vi.mocked(Actor.createActor).mockReturnValue(makeMockActor() as any));
+
+  it("returns ok on successful acknowledgment", async () => {
+    const result = await acknowledgeDocument("doc-1");
+    expect(result).toHaveProperty("ok");
+  });
+
+  it("returns err when document does not exist", async () => {
+    vi.mocked(Actor.createActor).mockReturnValue(
+      makeMockActor({ acknowledgeDocument: vi.fn().mockResolvedValue({ err: { NotFound: null } }) }) as any
+    );
+    const result = await acknowledgeDocument("doc-9999");
+    expect((result as any).err).toHaveProperty("NotFound");
+  });
+});
+
+describe("documents service — getAcknowledgmentStatus", () => {
+  beforeEach(() => vi.mocked(Actor.createActor).mockReturnValue(makeMockActor() as any));
+
+  it("returns list of (principalText, timestamp) tuples", async () => {
+    const status = await getAcknowledgmentStatus("doc-1");
+    expect(status).toHaveLength(1);
+    expect(status[0][0]).toBe("aaaaa-bbbbb-cai");
+    expect(typeof status[0][1]).toBe("bigint");
+  });
+
+  it("returns empty array for document with no acknowledgments", async () => {
+    vi.mocked(Actor.createActor).mockReturnValue(
+      makeMockActor({ getAcknowledgmentStatus: vi.fn().mockResolvedValue([]) }) as any
+    );
+    const status = await getAcknowledgmentStatus("doc-1");
+    expect(status).toEqual([]);
+  });
+});
+
+describe("documents service — getMyAcknowledgedDocs", () => {
+  beforeEach(() => vi.mocked(Actor.createActor).mockReturnValue(makeMockActor() as any));
+
+  it("returns list of docIds the caller has acknowledged", async () => {
+    const docIds = await getMyAcknowledgedDocs();
+    expect(docIds).toHaveLength(1);
+    expect(docIds[0]).toBe("doc-1");
+  });
+
+  it("returns empty array when caller has not acknowledged any docs", async () => {
+    vi.mocked(Actor.createActor).mockReturnValue(
+      makeMockActor({ getMyAcknowledgedDocs: vi.fn().mockResolvedValue([]) }) as any
+    );
+    const docIds = await getMyAcknowledgedDocs();
+    expect(docIds).toEqual([]);
   });
 });

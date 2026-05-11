@@ -42,6 +42,22 @@ export function idlFactory({ IDL }: { IDL: any }) {
     castAt:     IDL.Int,
   });
 
+  const PollStatus = IDL.Variant({ Open: IDL.Null, Closed: IDL.Null });
+
+  const PollOption = IDL.Record({ text: IDL.Text, votes: IDL.Nat });
+
+  const Poll = IDL.Record({
+    id:              IDL.Text,
+    question:        IDL.Text,
+    options:         IDL.Vec(PollOption),
+    status:          PollStatus,
+    showLiveResults: IDL.Bool,
+    anonymous:       IDL.Bool,
+    createdBy:       IDL.Principal,
+    deadline:        IDL.Int,
+    createdAt:       IDL.Int,
+  });
+
   const Error = IDL.Variant({
     NotFound:       IDL.Null,
     NotAuthorized:  IDL.Null,
@@ -49,10 +65,12 @@ export function idlFactory({ IDL }: { IDL: any }) {
     DeadlinePassed: IDL.Null,
     AlreadyVoted:   IDL.Null,
     NotOpen:        IDL.Null,
+    AlreadyClosed:  IDL.Null,
   });
 
   const ResultProposal = IDL.Variant({ ok: Proposal, err: Error });
   const ResultVote     = IDL.Variant({ ok: Vote,     err: Error });
+  const ResultPoll     = IDL.Variant({ ok: Poll,     err: Error });
 
   return IDL.Service({
     setMembersCanisterId: IDL.Func([IDL.Text],                              [],               []),
@@ -64,6 +82,13 @@ export function idlFactory({ IDL }: { IDL: any }) {
     getOpenProposals:     IDL.Func([],                                      [IDL.Vec(Proposal)], ["query"]),
     getAllProposals:       IDL.Func([],                                      [IDL.Vec(Proposal)], ["query"]),
     getMyVote:            IDL.Func([IDL.Text, IDL.Principal],               [IDL.Opt(Vote)],     ["query"]),
+    // Poll methods
+    createPoll:           IDL.Func([IDL.Text, IDL.Vec(IDL.Text), IDL.Int, IDL.Bool, IDL.Bool], [ResultPoll], []),
+    castPollVote:         IDL.Func([IDL.Text, IDL.Nat],                     [ResultPoll], []),
+    closePoll:            IDL.Func([IDL.Text],                              [ResultPoll], []),
+    getPoll:              IDL.Func([IDL.Text],                              [IDL.Opt(Poll)], ["query"]),
+    getOpenPolls:         IDL.Func([],                                      [IDL.Vec(Poll)], ["query"]),
+    getAllPolls:           IDL.Func([],                                      [IDL.Vec(Poll)], ["query"]),
   });
 }
 
@@ -93,13 +118,33 @@ export interface Vote {
   castAt:     bigint;
 }
 
+export type PollStatus = { Open: null } | { Closed: null };
+
+export interface PollOption {
+  text:  string;
+  votes: bigint;
+}
+
+export interface Poll {
+  id:              string;
+  question:        string;
+  options:         PollOption[];
+  status:          PollStatus;
+  showLiveResults: boolean;
+  anonymous:       boolean;
+  createdBy:       import("@dfinity/principal").Principal;
+  deadline:        bigint;
+  createdAt:       bigint;
+}
+
 export type GovernanceError =
   | { NotFound: null }
   | { NotAuthorized: null }
   | { InvalidInput: string }
   | { DeadlinePassed: null }
   | { AlreadyVoted: null }
-  | { NotOpen: null };
+  | { NotOpen: null }
+  | { AlreadyClosed: null };
 
 // ─── Actor ────────────────────────────────────────────────────────────────────
 
@@ -109,7 +154,7 @@ async function createActor() {
   return Actor.createActor(idlFactory, { agent, canisterId: CANISTER_ID_GOVERNANCE });
 }
 
-// ─── Service ──────────────────────────────────────────────────────────────────
+// ─── Proposal service ─────────────────────────────────────────────────────────
 
 export async function getAllProposals(): Promise<Proposal[]> {
   const actor = await createActor() as any;
@@ -137,4 +182,47 @@ export async function castVote(
   const actor = await createActor() as any;
   if (!actor) return { err: { NotFound: null } };
   return actor.castVote(proposalId, choice);
+}
+
+// ─── Poll service ─────────────────────────────────────────────────────────────
+
+export async function getAllPolls(): Promise<Poll[]> {
+  const actor = await createActor() as any;
+  if (!actor) return [];
+  return actor.getAllPolls();
+}
+
+export async function getOpenPolls(): Promise<Poll[]> {
+  const actor = await createActor() as any;
+  if (!actor) return [];
+  return actor.getOpenPolls();
+}
+
+export async function createPoll(
+  question: string,
+  optionTexts: string[],
+  deadline: bigint,
+  showLiveResults: boolean,
+  anonymous: boolean
+): Promise<{ ok: Poll } | { err: GovernanceError }> {
+  const actor = await createActor() as any;
+  if (!actor) return { err: { NotFound: null } };
+  return actor.createPoll(question, optionTexts, deadline, showLiveResults, anonymous);
+}
+
+export async function castPollVote(
+  pollId: string,
+  optionIdx: bigint
+): Promise<{ ok: Poll } | { err: GovernanceError }> {
+  const actor = await createActor() as any;
+  if (!actor) return { err: { NotFound: null } };
+  return actor.castPollVote(pollId, optionIdx);
+}
+
+export async function closePoll(
+  pollId: string
+): Promise<{ ok: Poll } | { err: GovernanceError }> {
+  const actor = await createActor() as any;
+  if (!actor) return { err: { NotFound: null } };
+  return actor.closePoll(pollId);
 }
