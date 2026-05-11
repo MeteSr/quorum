@@ -22,10 +22,7 @@ fi
 
 # Ensure a second identity and capture its principal
 dfx identity new quorum-member-b --storage-mode plaintext 2>/dev/null || true
-_PREV=$(dfx identity whoami)
-dfx identity use quorum-member-b 2>/dev/null || true
-MEMBER_B=$(dfx identity get-principal)
-dfx identity use "$_PREV"
+MEMBER_B=$(dfx --identity quorum-member-b identity get-principal)
 echo "Member B principal: $MEMBER_B"
 
 # ─── [1] initAdmin ───────────────────────────────────────────────────────────
@@ -86,8 +83,7 @@ dfx canister call $CANISTER getInviteCode '("SUNRISE2024")'
 # ─── [6] registerMember (member B uses the code) ─────────────────────────────
 echo ""
 echo "── [6] registerMember — member B registers with invite code ─────────────"
-dfx identity use quorum-member-b 2>/dev/null || true
-REG_OUT=$(dfx canister call $CANISTER registerMember '(
+REG_OUT=$(dfx --identity quorum-member-b canister call $CANISTER registerMember '(
   "12A",
   "Jordan Smith",
   "jordan@sunrise.hoa",
@@ -98,10 +94,8 @@ if echo "$REG_OUT" | grep -q "Jordan Smith"; then
   echo "  ✓ Member registered"
 else
   echo "  ↳ ❌ Expected registration result"
-  dfx identity use default 2>/dev/null || true
   exit 1
 fi
-dfx identity use default 2>/dev/null || true
 
 # ─── [7] getMember ───────────────────────────────────────────────────────────
 echo ""
@@ -159,14 +153,12 @@ fi
 # ─── [V1] registerMember again → AlreadyExists ───────────────────────────────
 echo ""
 echo "── [V1] registerMember again → expect AlreadyExists ────────────────────"
-dfx identity use quorum-member-b 2>/dev/null || true
-dfx canister call $CANISTER registerMember '(
+dfx --identity quorum-member-b canister call $CANISTER registerMember '(
   "12A",
   "Jordan Again",
   "jordan2@sunrise.hoa",
   "SUNRISE2024"
 )' && echo "  ↳ ❌ Expected AlreadyExists" || echo "  ✓ AlreadyExists returned"
-dfx identity use default 2>/dev/null || true
 
 # ─── [V2] setCommunityProfile — empty name → InvalidInput ────────────────────
 echo ""
