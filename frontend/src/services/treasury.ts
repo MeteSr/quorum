@@ -1,6 +1,7 @@
-import { Actor, HttpAgent } from "@dfinity/agent";
+import { Actor } from "@icp-sdk/core/agent";
+import { getAgent } from "@/services/actor";
 
-declare const CANISTER_ID_TREASURY: string;
+const CANISTER_ID_TREASURY = (process.env as any).CANISTER_ID_TREASURY || "";
 
 // ─── IDL Factory ─────────────────────────────────────────────────────────────
 
@@ -21,16 +22,16 @@ export function idlFactory({ IDL }: { IDL: any }) {
   });
 
   const Assessment = IDL.Record({
-    id:           IDL.Text,
-    unitId:       IDL.Text,
-    amountCents:  IDL.Nat,
-    kind:         AssessmentType,
-    description:  IDL.Text,
-    dueDate:      IDL.Int,
-    status:       PaymentStatus,
-    paidAt:       IDL.Opt(IDL.Int),
-    createdAt:    IDL.Int,
-    createdBy:    IDL.Principal,
+    id:          IDL.Text,
+    unitId:      IDL.Text,
+    amountCents: IDL.Nat,
+    kind:        AssessmentType,
+    description: IDL.Text,
+    dueDate:     IDL.Int,
+    status:      PaymentStatus,
+    paidAt:      IDL.Opt(IDL.Int),
+    createdAt:   IDL.Int,
+    createdBy:   IDL.Principal,
   });
 
   const Error = IDL.Variant({
@@ -42,14 +43,14 @@ export function idlFactory({ IDL }: { IDL: any }) {
   const ResultAssessment = IDL.Variant({ ok: Assessment, err: Error });
 
   return IDL.Service({
-    setMembersCanisterId:      IDL.Func([IDL.Text],                                          [],                        []),
-    postAssessment:            IDL.Func([IDL.Text, IDL.Nat, AssessmentType, IDL.Text, IDL.Int], [ResultAssessment],      []),
-    markPaid:                  IDL.Func([IDL.Text],                                          [ResultAssessment],        []),
-    waiveAssessment:           IDL.Func([IDL.Text],                                          [ResultAssessment],        []),
-    getAssessment:             IDL.Func([IDL.Text],                                          [IDL.Opt(Assessment)],     ["query"]),
-    getAssessmentsForUnit:     IDL.Func([IDL.Text],                                          [IDL.Vec(Assessment)],     ["query"]),
-    getOutstandingAssessments: IDL.Func([],                                                  [IDL.Vec(Assessment)],     ["query"]),
-    getTotalOutstandingCents:  IDL.Func([],                                                  [IDL.Nat],                 ["query"]),
+    setMembersCanisterId:      IDL.Func([IDL.Text],                                           [],                    []),
+    postAssessment:            IDL.Func([IDL.Text, IDL.Nat, AssessmentType, IDL.Text, IDL.Int], [ResultAssessment],   []),
+    markPaid:                  IDL.Func([IDL.Text],                                           [ResultAssessment],    []),
+    waiveAssessment:           IDL.Func([IDL.Text],                                           [ResultAssessment],    []),
+    getAssessment:             IDL.Func([IDL.Text],                                           [IDL.Opt(Assessment)], ["query"]),
+    getAssessmentsForUnit:     IDL.Func([IDL.Text],                                           [IDL.Vec(Assessment)], ["query"]),
+    getOutstandingAssessments: IDL.Func([],                                                   [IDL.Vec(Assessment)], ["query"]),
+    getTotalOutstandingCents:  IDL.Func([],                                                   [IDL.Nat],             ["query"]),
   });
 }
 
@@ -75,37 +76,34 @@ export type TreasuryError = { NotFound: null } | { NotAuthorized: null } | { Inv
 
 // ─── Actor ────────────────────────────────────────────────────────────────────
 
-function createActor() {
+async function createActor() {
   if (!CANISTER_ID_TREASURY) return null;
-  const agent = new HttpAgent();
-  if (typeof window === "undefined" || window.location.hostname === "localhost") {
-    agent.fetchRootKey().catch(() => {});
-  }
+  const agent = await getAgent();
   return Actor.createActor(idlFactory, { agent, canisterId: CANISTER_ID_TREASURY });
 }
 
 // ─── Service ──────────────────────────────────────────────────────────────────
 
 export async function getOutstandingAssessments(): Promise<Assessment[]> {
-  const actor = createActor() as any;
+  const actor = await createActor() as any;
   if (!actor) return [];
   return actor.getOutstandingAssessments();
 }
 
 export async function getAssessmentsForUnit(unitId: string): Promise<Assessment[]> {
-  const actor = createActor() as any;
+  const actor = await createActor() as any;
   if (!actor) return [];
   return actor.getAssessmentsForUnit(unitId);
 }
 
 export async function getTotalOutstandingCents(): Promise<bigint> {
-  const actor = createActor() as any;
+  const actor = await createActor() as any;
   if (!actor) return BigInt(0);
   return actor.getTotalOutstandingCents();
 }
 
 export async function markPaid(id: string): Promise<{ ok: Assessment } | { err: TreasuryError }> {
-  const actor = createActor() as any;
+  const actor = await createActor() as any;
   if (!actor) return { err: { NotFound: null } };
   return actor.markPaid(id);
 }

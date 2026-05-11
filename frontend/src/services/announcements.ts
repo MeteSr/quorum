@@ -1,6 +1,7 @@
-import { Actor, HttpAgent } from "@dfinity/agent";
+import { Actor } from "@icp-sdk/core/agent";
+import { getAgent } from "@/services/actor";
 
-declare const CANISTER_ID_ANNOUNCEMENTS: string;
+const CANISTER_ID_ANNOUNCEMENTS = (process.env as any).CANISTER_ID_ANNOUNCEMENTS || "";
 
 // ─── IDL Factory ─────────────────────────────────────────────────────────────
 
@@ -32,11 +33,11 @@ export function idlFactory({ IDL }: { IDL: any }) {
 
   return IDL.Service({
     post:            IDL.Func([IDL.Text, IDL.Text, Priority, IDL.Opt(IDL.Int)], [ResultAnnouncement], []),
-    delete:          IDL.Func([IDL.Text],                                       [ResultUnit],         []),
-    getAnnouncement: IDL.Func([IDL.Text],                                       [IDL.Opt(Announcement)], ["query"]),
-    getActive:       IDL.Func([],                                               [IDL.Vec(Announcement)], ["query"]),
-    getUrgent:       IDL.Func([],                                               [IDL.Vec(Announcement)], ["query"]),
-    getAll:          IDL.Func([],                                               [IDL.Vec(Announcement)], ["query"]),
+    delete:          IDL.Func([IDL.Text],                                        [ResultUnit],         []),
+    getAnnouncement: IDL.Func([IDL.Text],                                        [IDL.Opt(Announcement)], ["query"]),
+    getActive:       IDL.Func([],                                                [IDL.Vec(Announcement)], ["query"]),
+    getUrgent:       IDL.Func([],                                                [IDL.Vec(Announcement)], ["query"]),
+    getAll:          IDL.Func([],                                                [IDL.Vec(Announcement)], ["query"]),
   });
 }
 
@@ -61,31 +62,28 @@ export type AnnouncementsError =
 
 // ─── Actor ────────────────────────────────────────────────────────────────────
 
-function createActor() {
+async function createActor() {
   if (!CANISTER_ID_ANNOUNCEMENTS) return null;
-  const agent = new HttpAgent();
-  if (typeof window === "undefined" || window.location.hostname === "localhost") {
-    agent.fetchRootKey().catch(() => {});
-  }
+  const agent = await getAgent();
   return Actor.createActor(idlFactory, { agent, canisterId: CANISTER_ID_ANNOUNCEMENTS });
 }
 
 // ─── Service ──────────────────────────────────────────────────────────────────
 
 export async function getActive(): Promise<Announcement[]> {
-  const actor = createActor() as any;
+  const actor = await createActor() as any;
   if (!actor) return [];
   return actor.getActive();
 }
 
 export async function getUrgent(): Promise<Announcement[]> {
-  const actor = createActor() as any;
+  const actor = await createActor() as any;
   if (!actor) return [];
   return actor.getUrgent();
 }
 
 export async function getAll(): Promise<Announcement[]> {
-  const actor = createActor() as any;
+  const actor = await createActor() as any;
   if (!actor) return [];
   return actor.getAll();
 }
@@ -93,7 +91,7 @@ export async function getAll(): Promise<Announcement[]> {
 export async function post(
   title: string, body: string, priority: Priority, expiresAt: [] | [bigint]
 ): Promise<{ ok: Announcement } | { err: AnnouncementsError }> {
-  const actor = createActor() as any;
+  const actor = await createActor() as any;
   if (!actor) return { err: { NotFound: null } };
   return actor.post(title, body, priority, expiresAt);
 }
@@ -101,7 +99,7 @@ export async function post(
 export async function deleteAnnouncement(
   id: string
 ): Promise<{ ok: null } | { err: AnnouncementsError }> {
-  const actor = createActor() as any;
+  const actor = await createActor() as any;
   if (!actor) return { err: { NotFound: null } };
   return actor.delete(id);
 }

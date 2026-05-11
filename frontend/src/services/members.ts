@@ -1,6 +1,7 @@
-import { Actor, HttpAgent } from "@dfinity/agent";
+import { Actor } from "@icp-sdk/core/agent";
+import { getAgent } from "@/services/actor";
 
-declare const CANISTER_ID_MEMBERS: string;
+const CANISTER_ID_MEMBERS = (process.env as any).CANISTER_ID_MEMBERS || "";
 
 // ─── IDL Factory ─────────────────────────────────────────────────────────────
 
@@ -44,33 +45,33 @@ export function idlFactory({ IDL }: { IDL: any }) {
   });
 
   const Error = IDL.Variant({
-    NotFound:     IDL.Null,
+    NotFound:      IDL.Null,
     NotAuthorized: IDL.Null,
     AlreadyExists: IDL.Null,
     InvalidInput:  IDL.Text,
     InvalidCode:   IDL.Text,
   });
 
-  const ResultUnit      = IDL.Variant({ ok: IDL.Null,             err: Error });
-  const ResultMember    = IDL.Variant({ ok: Member,               err: Error });
-  const ResultProfile   = IDL.Variant({ ok: CommunityProfile,     err: Error });
-  const ResultInvite    = IDL.Variant({ ok: InviteCode,           err: Error });
+  const ResultUnit    = IDL.Variant({ ok: IDL.Null,           err: Error });
+  const ResultMember  = IDL.Variant({ ok: Member,             err: Error });
+  const ResultProfile = IDL.Variant({ ok: CommunityProfile,   err: Error });
+  const ResultInvite  = IDL.Variant({ ok: InviteCode,         err: Error });
 
   return IDL.Service({
-    initAdmin:            IDL.Func([],                                   [ResultUnit],    []),
-    setCommunityProfile:  IDL.Func([IDL.Text, IDL.Text, IDL.Nat, IDL.Text], [ResultProfile], []),
-    getCommunityProfile:  IDL.Func([],                                   [IDL.Opt(CommunityProfile)], ["query"]),
-    generateInviteCode:   IDL.Func([IDL.Text, IDL.Nat, IDL.Opt(IDL.Int)], [ResultInvite],  []),
-    revokeInviteCode:     IDL.Func([IDL.Text],                           [ResultUnit],    []),
-    getInviteCode:        IDL.Func([IDL.Text],                           [IDL.Opt(InviteCode)], ["query"]),
-    registerMember:       IDL.Func([IDL.Text, IDL.Text, IDL.Text, IDL.Text], [ResultMember], []),
-    assignRole:           IDL.Func([IDL.Principal, Role],                [ResultUnit],    []),
-    deactivateMember:     IDL.Func([IDL.Principal],                      [ResultUnit],    []),
-    getMember:            IDL.Func([IDL.Principal],                      [IDL.Opt(Member)], ["query"]),
-    getAllMembers:         IDL.Func([],                                   [IDL.Vec(Member)], ["query"]),
-    getActiveMembers:     IDL.Func([],                                   [IDL.Vec(Member)], ["query"]),
-    getMyProfile:         IDL.Func([],                                   [IDL.Opt(Member)], ["query"]),
-    isBoardMember:        IDL.Func([IDL.Principal],                      [IDL.Bool],      ["query"]),
+    initAdmin:           IDL.Func([],                                        [ResultUnit],                    []),
+    setCommunityProfile: IDL.Func([IDL.Text, IDL.Text, IDL.Nat, IDL.Text],  [ResultProfile],                 []),
+    getCommunityProfile: IDL.Func([],                                        [IDL.Opt(CommunityProfile)],     ["query"]),
+    generateInviteCode:  IDL.Func([IDL.Text, IDL.Nat, IDL.Opt(IDL.Int)],    [ResultInvite],                  []),
+    revokeInviteCode:    IDL.Func([IDL.Text],                                [ResultUnit],                    []),
+    getInviteCode:       IDL.Func([IDL.Text],                                [IDL.Opt(InviteCode)],           ["query"]),
+    registerMember:      IDL.Func([IDL.Text, IDL.Text, IDL.Text, IDL.Text], [ResultMember],                  []),
+    assignRole:          IDL.Func([IDL.Principal, Role],                     [ResultUnit],                    []),
+    deactivateMember:    IDL.Func([IDL.Principal],                           [ResultUnit],                    []),
+    getMember:           IDL.Func([IDL.Principal],                           [IDL.Opt(Member)],               ["query"]),
+    getAllMembers:        IDL.Func([],                                        [IDL.Vec(Member)],               ["query"]),
+    getActiveMembers:    IDL.Func([],                                        [IDL.Vec(Member)],               ["query"]),
+    getMyProfile:        IDL.Func([],                                        [IDL.Opt(Member)],               ["query"]),
+    isBoardMember:       IDL.Func([IDL.Principal],                           [IDL.Bool],                      ["query"]),
   });
 }
 
@@ -121,32 +122,36 @@ export type MembersError =
 
 // ─── Actor ────────────────────────────────────────────────────────────────────
 
-function createActor() {
+async function createActor() {
   if (!CANISTER_ID_MEMBERS) return null;
-  const agent = new HttpAgent();
-  if (typeof window === "undefined" || window.location.hostname === "localhost") {
-    agent.fetchRootKey().catch(() => {});
-  }
+  const agent = await getAgent();
   return Actor.createActor(idlFactory, { agent, canisterId: CANISTER_ID_MEMBERS });
 }
 
 // ─── Service ──────────────────────────────────────────────────────────────────
 
 export async function getCommunityProfile(): Promise<CommunityProfile | null> {
-  const actor = createActor() as any;
+  const actor = await createActor() as any;
   if (!actor) return null;
   const result = await actor.getCommunityProfile();
   return result.length ? result[0] : null;
 }
 
+export async function getMyProfile(): Promise<Member | null> {
+  const actor = await createActor() as any;
+  if (!actor) return null;
+  const result = await actor.getMyProfile();
+  return result.length ? result[0] : null;
+}
+
 export async function getAllMembers(): Promise<Member[]> {
-  const actor = createActor() as any;
+  const actor = await createActor() as any;
   if (!actor) return [];
   return actor.getAllMembers();
 }
 
 export async function getActiveMembers(): Promise<Member[]> {
-  const actor = createActor() as any;
+  const actor = await createActor() as any;
   if (!actor) return [];
   return actor.getActiveMembers();
 }
@@ -154,7 +159,7 @@ export async function getActiveMembers(): Promise<Member[]> {
 export async function registerMember(
   unitId: string, displayName: string, email: string, inviteCode: string
 ): Promise<{ ok: Member } | { err: MembersError }> {
-  const actor = createActor() as any;
+  const actor = await createActor() as any;
   if (!actor) return { err: { NotFound: null } };
   return actor.registerMember(unitId, displayName, email, inviteCode);
 }
@@ -162,7 +167,7 @@ export async function registerMember(
 export async function generateInviteCode(
   code: string, maxUses: bigint, expiresAt: [] | [bigint]
 ): Promise<{ ok: InviteCode } | { err: MembersError }> {
-  const actor = createActor() as any;
+  const actor = await createActor() as any;
   if (!actor) return { err: { NotFound: null } };
   return actor.generateInviteCode(code, maxUses, expiresAt);
 }

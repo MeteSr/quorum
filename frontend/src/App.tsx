@@ -1,136 +1,110 @@
-import { useState } from "react";
-import Landing from "./Landing";
+import { BrowserRouter, Routes, Route, NavLink, Navigate, useLocation } from "react-router-dom";
+import { AuthProvider, useAuth } from "@/context/AuthContext";
+import { useAuthStore } from "@/store/authStore";
+import LoginPage       from "@/pages/LoginPage";
+import RegisterPage    from "@/pages/RegisterPage";
+import DashboardPage   from "@/pages/DashboardPage";
+import ProposalsPage   from "@/pages/ProposalsPage";
+import TreasuryPage    from "@/pages/TreasuryPage";
+import DocumentsPage   from "@/pages/DocumentsPage";
+import AnnouncementsPage from "@/pages/AnnouncementsPage";
 
 const S = {
-  ink:      "#0E0E0C",
   paper:    "#F9F6F0",
-  rule:     "#C8C3B8",
   navy:     "#1B2D4F",
-  sage:     "#5A8C58",
-  sageText: "#3A6638",
-  amber:    "#D4860A",
+  rule:     "#C8C3B8",
   inkLight: "#7A7268",
   mono:     "'IBM Plex Mono', monospace",
-  sans:     "'IBM Plex Sans', system-ui, sans-serif",
 };
 
-type Tab = "dashboard" | "proposals" | "treasury" | "documents" | "announcements";
+const NAV_TABS = [
+  { to: "/dashboard",     label: "Dashboard"     },
+  { to: "/proposals",     label: "Proposals"     },
+  { to: "/treasury",      label: "Treasury"      },
+  { to: "/documents",     label: "Documents"     },
+  { to: "/announcements", label: "Announcements" },
+] as const;
 
-export default function App() {
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
-  const [tab, setTab] = useState<Tab>("dashboard");
+function ProtectedRoute({ children }: { children: React.ReactNode }) {
+  const { isAuthenticated, isLoading } = useAuthStore();
+  const location = useLocation();
+  if (isLoading) return null;
+  if (!isAuthenticated) return <Navigate to="/" state={{ from: location }} replace />;
+  return <>{children}</>;
+}
 
-  if (!isLoggedIn) {
-    return <Landing onLogin={() => setIsLoggedIn(true)} />;
-  }
+function AppShell() {
+  const { logout } = useAuth();
+  const { isAuthenticated, isLoading } = useAuthStore();
 
   return (
     <div style={{ display: "flex", flexDirection: "column", minHeight: "100vh", background: S.paper }}>
-      <header style={{
-        borderBottom: `1px solid ${S.rule}`,
-        padding: "0 2rem",
-        display: "flex",
-        alignItems: "center",
-        gap: "2rem",
-        height: 56,
-        background: S.navy,
-        color: S.paper,
-      }}>
-        <span style={{ fontFamily: S.mono, fontSize: "0.8rem", letterSpacing: "0.12em", fontWeight: 700 }}>
-          QUORUM
-        </span>
-        <nav style={{ display: "flex", gap: "1.5rem", marginLeft: "auto" }}>
-          {(["dashboard", "proposals", "treasury", "documents", "announcements"] as Tab[]).map((t) => (
-            <button
-              key={t}
-              onClick={() => setTab(t)}
-              style={{
-                background: "none",
-                border: "none",
-                color: tab === t ? S.paper : S.inkLight,
-                fontFamily: S.mono,
-                fontSize: "0.65rem",
-                letterSpacing: "0.1em",
-                textTransform: "uppercase",
-                cursor: "pointer",
-                padding: "0 0 2px",
-                borderBottom: tab === t ? `1px solid ${S.paper}` : "1px solid transparent",
-              }}
-            >
-              {t}
-            </button>
-          ))}
-        </nav>
-        <button
-          onClick={() => setIsLoggedIn(false)}
-          style={{
-            marginLeft: "2rem",
-            background: "none",
-            border: "1px solid rgba(255,255,255,0.2)",
-            color: "rgba(255,255,255,0.55)",
-            fontFamily: S.mono,
-            fontSize: "0.58rem",
-            letterSpacing: "0.1em",
-            textTransform: "uppercase",
-            padding: "0.3rem 0.75rem",
-            cursor: "pointer",
-          }}
-        >
-          Sign out
-        </button>
-      </header>
+      {isAuthenticated && (
+        <header style={{
+          borderBottom: `1px solid ${S.rule}`, padding: "0 2rem",
+          display: "flex", alignItems: "center", gap: "2rem",
+          height: 56, background: S.navy, color: S.paper,
+        }}>
+          <span style={{ fontFamily: S.mono, fontSize: "0.8rem", letterSpacing: "0.12em", fontWeight: 700 }}>
+            QUORUM
+          </span>
+          <nav style={{ display: "flex", gap: "1.5rem", marginLeft: "auto" }}>
+            {NAV_TABS.map(({ to, label }) => (
+              <NavLink
+                key={to}
+                to={to}
+                style={({ isActive }) => ({
+                  background: "none", border: "none",
+                  color: isActive ? S.paper : S.inkLight,
+                  fontFamily: S.mono, fontSize: "0.65rem",
+                  letterSpacing: "0.1em", textTransform: "uppercase",
+                  cursor: "pointer", padding: "0 0 2px", textDecoration: "none",
+                  borderBottom: isActive ? `1px solid ${S.paper}` : "1px solid transparent",
+                })}
+              >
+                {label}
+              </NavLink>
+            ))}
+          </nav>
+          <button
+            onClick={logout}
+            style={{
+              marginLeft: "2rem", background: "none",
+              border: "1px solid rgba(255,255,255,0.2)",
+              color: "rgba(255,255,255,0.55)", fontFamily: S.mono,
+              fontSize: "0.58rem", letterSpacing: "0.1em",
+              textTransform: "uppercase", padding: "0.3rem 0.75rem", cursor: "pointer",
+            }}
+          >
+            Sign out
+          </button>
+        </header>
+      )}
 
-      <main style={{ flex: 1, padding: "2.5rem 2rem", maxWidth: 960, margin: "0 auto", width: "100%" }}>
-        {tab === "dashboard"     && <Dashboard />}
-        {tab === "proposals"     && <Placeholder title="Proposals"     description="Active votes and governance history" />}
-        {tab === "treasury"      && <Placeholder title="Treasury"      description="Dues, assessments, and financial records" />}
-        {tab === "documents"     && <Placeholder title="Documents"     description="CC&Rs, bylaws, meeting minutes, and budgets" />}
-        {tab === "announcements" && <Placeholder title="Announcements" description="Community notices and alerts" />}
+      <main style={{ flex: 1, padding: isAuthenticated ? "2.5rem 2rem" : "0", maxWidth: isAuthenticated ? 960 : "none", margin: "0 auto", width: "100%" }}>
+        {!isLoading && (
+          <Routes>
+            <Route path="/"              element={isAuthenticated ? <Navigate to="/dashboard" replace /> : <LoginPage />} />
+            <Route path="/register"      element={<ProtectedRoute><RegisterPage /></ProtectedRoute>} />
+            <Route path="/dashboard"     element={<ProtectedRoute><DashboardPage /></ProtectedRoute>} />
+            <Route path="/proposals"     element={<ProtectedRoute><ProposalsPage /></ProtectedRoute>} />
+            <Route path="/treasury"      element={<ProtectedRoute><TreasuryPage /></ProtectedRoute>} />
+            <Route path="/documents"     element={<ProtectedRoute><DocumentsPage /></ProtectedRoute>} />
+            <Route path="/announcements" element={<ProtectedRoute><AnnouncementsPage /></ProtectedRoute>} />
+            <Route path="*"              element={<Navigate to="/" replace />} />
+          </Routes>
+        )}
       </main>
     </div>
   );
 }
 
-function Dashboard() {
+export default function App() {
   return (
-    <div>
-      <h1 style={{ fontFamily: "'Playfair Display', Georgia, serif", fontWeight: 900, fontSize: "2rem", marginBottom: "0.25rem" }}>
-        Good morning, Homeowner.
-      </h1>
-      <p style={{ color: S.inkLight, fontFamily: S.sans, fontSize: "0.9rem", marginBottom: "2rem" }}>
-        Your community at a glance.
-      </p>
-
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "1rem" }}>
-        {[
-          { label: "Open Proposals",   value: "2"     },
-          { label: "Outstanding Dues", value: "$0.00" },
-          { label: "Unread Notices",   value: "1"     },
-        ].map((card) => (
-          <div key={card.label} style={{ border: `1px solid ${S.rule}`, padding: "1.5rem", background: "#fff" }}>
-            <div style={{ fontFamily: S.mono, fontSize: "0.65rem", letterSpacing: "0.1em", color: S.inkLight, textTransform: "uppercase", marginBottom: "0.5rem" }}>
-              {card.label}
-            </div>
-            <div style={{ fontFamily: "'Playfair Display', Georgia, serif", fontSize: "2rem", fontWeight: 700 }}>
-              {card.value}
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function Placeholder({ title, description }: { title: string; description: string }) {
-  return (
-    <div>
-      <h1 style={{ fontFamily: "'Playfair Display', Georgia, serif", fontWeight: 900, fontSize: "2rem", marginBottom: "0.25rem" }}>
-        {title}
-      </h1>
-      <p style={{ color: S.inkLight, fontFamily: S.sans, fontSize: "0.9rem" }}>{description}</p>
-      <div style={{ marginTop: "2rem", padding: "3rem", border: `1px dashed ${S.rule}`, textAlign: "center", color: S.inkLight, fontFamily: S.mono, fontSize: "0.75rem", letterSpacing: "0.08em" }}>
-        COMING SOON
-      </div>
-    </div>
+    <BrowserRouter>
+      <AuthProvider>
+        <AppShell />
+      </AuthProvider>
+    </BrowserRouter>
   );
 }
