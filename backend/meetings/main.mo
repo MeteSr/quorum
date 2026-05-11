@@ -218,7 +218,7 @@ persistent actor Meetings {
         var lines : Text = "MINUTES OF " # typeLabel # "\n";
         lines #= "Meeting ID: " # m.id # "\n";
         lines #= "Attendees: " # Nat.toText(m.attendees.size()) # "\n";
-        lines #= "Quorum met: " # (if m.quorumMet "Yes" else "No") # "\n\n";
+        lines #= "Quorum met: " # (if (m.quorumMet) "Yes" else "No") # "\n\n";
         lines #= "AGENDA\n";
         for (item in Iter.fromArray(m.agendaItems)) {
           lines #= "  " # item.title # "\n";
