@@ -12,14 +12,14 @@ cd frontend && npm run test:unit         # vitest unit tests (service + store)
 cd frontend && npm run test:unit:coverage
 
 # Backend integration tests (requires deployed canisters)
-bash scripts/test-backend.sh            # run all 6 canister test suites in parallel
+bash scripts/test-backend.sh            # run all canister test suites in parallel
 bash scripts/test-backend.sh members    # run one canister's suite
 bash backend/maintenance/test.sh        # run a single test file directly
 ```
 
 ## Architecture
 
-6 Motoko canisters (`persistent actor`, mo:core). All variables are implicitly stable.
+9 Motoko canisters (`persistent actor`, mo:core). All variables are implicitly stable.
 
 | Canister | Responsibility |
 |---|---|
@@ -29,6 +29,9 @@ bash backend/maintenance/test.sh        # run a single test file directly
 | documents | CC&Rs, meeting minutes, budgets |
 | announcements | Community notices |
 | maintenance | Maintenance requests, assignment, audit trail, SLA |
+| violations | Violation reports, replies, status workflow |
+| meetings | Meeting records, agenda, attendance, motions, minutes |
+| calendar | Community calendar, events, iCal feed via http_request |
 
 ## Conventions
 

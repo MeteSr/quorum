@@ -12,6 +12,8 @@ import { idlFactory as documentsIdl }     from "../../services/documents";
 import { idlFactory as announcementsIdl } from "../../services/announcements";
 import { idlFactory as maintenanceIdl }   from "../../services/maintenance";
 import { idlFactory as violationsIdl }    from "../../services/violations";
+import { idlFactory as meetingsIdl }      from "../../services/meetings";
+import { idlFactory as calendarIdl }      from "../../services/calendar";
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
 
@@ -329,5 +331,103 @@ describe("violations IDL factory", () => {
     const m = methods.get("getViolationsForUnit")!;
     expect(m.isQuery).toBe(true);
     expect(m.argTypes).toHaveLength(1);
+  });
+});
+
+// ─── Meetings ────────────────────────────────────────────────────────────────
+
+describe("meetings IDL factory", () => {
+  let methods: ReturnType<typeof extractService>;
+  beforeAll(() => { methods = extractService(meetingsIdl); });
+
+  test("exposes all expected methods", () => {
+    const expected = [
+      "addAgendaItem",
+      "addMotion",
+      "createMeeting",
+      "generateMinutes",
+      "getAllMeetings",
+      "getMeeting",
+      "recordAttendance",
+      "setCalendarCanisterId",
+      "setDocumentsCanisterId",
+    ];
+    expect([...methods.keys()].sort()).toEqual(expected);
+  });
+
+  test("createMeeting is an update call", () => {
+    expect(methods.get("createMeeting")!.isQuery).toBe(false);
+  });
+
+  test("getMeeting is a query", () => {
+    expect(methods.get("getMeeting")!.isQuery).toBe(true);
+  });
+
+  test("getAllMeetings is a query", () => {
+    expect(methods.get("getAllMeetings")!.isQuery).toBe(true);
+  });
+
+  test("generateMinutes is an update call", () => {
+    expect(methods.get("generateMinutes")!.isQuery).toBe(false);
+  });
+
+  test("createMeeting takes 3 args (date, type, agendaItems)", () => {
+    expect(methods.get("createMeeting")!.argTypes).toHaveLength(3);
+  });
+
+  test("addAgendaItem takes 4 args", () => {
+    expect(methods.get("addAgendaItem")!.argTypes).toHaveLength(4);
+  });
+
+  test("addMotion takes 7 args", () => {
+    expect(methods.get("addMotion")!.argTypes).toHaveLength(7);
+  });
+});
+
+// ─── Calendar ────────────────────────────────────────────────────────────────
+
+describe("calendar IDL factory", () => {
+  let methods: ReturnType<typeof extractService>;
+  beforeAll(() => { methods = extractService(calendarIdl); });
+
+  test("exposes all expected methods", () => {
+    const expected = [
+      "createEvent",
+      "deleteEvent",
+      "getEvent",
+      "getUpcomingEvents",
+      "http_request",
+      "listEvents",
+      "setMeetingsCanisterId",
+    ];
+    expect([...methods.keys()].sort()).toEqual(expected);
+  });
+
+  test("createEvent is an update call", () => {
+    expect(methods.get("createEvent")!.isQuery).toBe(false);
+  });
+
+  test("deleteEvent is an update call", () => {
+    expect(methods.get("deleteEvent")!.isQuery).toBe(false);
+  });
+
+  test("getEvent is a query", () => {
+    expect(methods.get("getEvent")!.isQuery).toBe(true);
+  });
+
+  test("listEvents is a query", () => {
+    expect(methods.get("listEvents")!.isQuery).toBe(true);
+  });
+
+  test("http_request is a query", () => {
+    expect(methods.get("http_request")!.isQuery).toBe(true);
+  });
+
+  test("createEvent takes 6 args", () => {
+    expect(methods.get("createEvent")!.argTypes).toHaveLength(6);
+  });
+
+  test("listEvents takes 2 args (startAt, endAt)", () => {
+    expect(methods.get("listEvents")!.argTypes).toHaveLength(2);
   });
 });
