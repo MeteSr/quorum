@@ -20,6 +20,8 @@ export default defineConfig({
     CANISTER_ID_CALENDAR:      JSON.stringify(process.env.CANISTER_ID_CALENDAR      || ""),
     CANISTER_ID_ARC:           JSON.stringify(process.env.CANISTER_ID_ARC           || ""),
     CANISTER_ID_PARKING:       JSON.stringify(process.env.CANISTER_ID_PARKING       || ""),
+    CANISTER_ID_VENDORS:       JSON.stringify(process.env.CANISTER_ID_VENDORS       || ""),
+    CANISTER_ID_DISCUSSIONS:   JSON.stringify(process.env.CANISTER_ID_DISCUSSIONS   || ""),
   },
   server: {
     port: 5173,
