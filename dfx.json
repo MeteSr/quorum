@@ -1,11 +1,57 @@
 {
-  "canisters": {
-    "members":       { "main": "backend/members/main.mo",       "type": "motoko" },
-    "governance":    { "main": "backend/governance/main.mo",    "type": "motoko" },
-    "treasury":      { "main": "backend/treasury/main.mo",      "type": "motoko" },
-    "documents":     { "main": "backend/documents/main.mo",     "type": "motoko" },
-    "announcements": { "main": "backend/announcements/main.mo", "type": "motoko" },
-    "maintenance":   { "main": "backend/maintenance/main.mo",   "type": "motoko" }
+  "version": 1,
+  "defaults": {
+    "build": {
+      "packtool": "mops sources"
+    }
   },
-  "version": 1
+  "canisters": {
+    "members": {
+      "type": "motoko",
+      "main": "backend/members/main.mo"
+    },
+    "governance": {
+      "type": "motoko",
+      "main": "backend/governance/main.mo"
+    },
+    "treasury": {
+      "type": "motoko",
+      "main": "backend/treasury/main.mo"
+    },
+    "documents": {
+      "type": "motoko",
+      "main": "backend/documents/main.mo"
+    },
+    "announcements": {
+      "type": "motoko",
+      "main": "backend/announcements/main.mo"
+    },
+    "maintenance": {
+      "type": "motoko",
+      "main": "backend/maintenance/main.mo"
+    },
+    "violations": {
+      "type": "motoko",
+      "main": "backend/violations/main.mo"
+    },
+    "frontend": {
+      "type": "assets",
+      "source": ["frontend/dist"],
+      "dependencies": [
+        "members",
+        "governance",
+        "treasury",
+        "documents",
+        "announcements",
+        "maintenance",
+        "violations"
+      ]
+    }
+  },
+  "networks": {
+    "local": {
+      "bind": "127.0.0.1:8000",
+      "type": "ephemeral"
+    }
+  }
 }

@@ -24,10 +24,7 @@ IDENTITY_A=$(dfx identity get-principal)
 echo "Test identity: $IDENTITY_A"
 
 dfx identity new quorum-member-b --storage-mode plaintext 2>/dev/null || true
-_PREV=$(dfx identity whoami)
-dfx identity use quorum-member-b 2>/dev/null || true
-IDENTITY_B=$(dfx identity get-principal)
-dfx identity use "$_PREV"
+IDENTITY_B=$(dfx --identity quorum-member-b identity get-principal)
 echo "Member B identity: $IDENTITY_B"
 
 echo ""
@@ -50,7 +47,7 @@ fi
 
 echo ""
 echo "-- [2] getRequest -- should be #Open"
-GET_OUT=$(dfx canister call $CANISTER getRequest "("$REQ_ID")")
+GET_OUT=$(dfx canister call $CANISTER getRequest "(\"$REQ_ID\")")
 echo "$GET_OUT"
 if echo "$GET_OUT" | grep -q "Open"; then
   echo "  ok Status is Open"
@@ -135,7 +132,7 @@ fi
 
 echo ""
 echo "-- [9] Audit trail"
-AUDIT_OUT=$(dfx canister call $CANISTER getRequest "("$REQ_ID")")
+AUDIT_OUT=$(dfx canister call $CANISTER getRequest "(\"$REQ_ID\")")
 echo "$AUDIT_OUT"
 HISTORY_COUNT=$(echo "$AUDIT_OUT" | grep -c "note =" || true)
 echo "  -> Audit entries: $HISTORY_COUNT"
@@ -188,14 +185,12 @@ fi
 
 echo ""
 echo "-- [13] Multi-identity isolation"
-dfx identity use quorum-member-b 2>/dev/null || true
-dfx canister call $CANISTER submitRequest '(
+dfx --identity quorum-member-b canister call $CANISTER submitRequest '(
   "99A",
   variant { Electrical },
   "Outlet sparking in living room",
   vec {}
 )' > /dev/null
-dfx identity use default 2>/dev/null || true
 
 MY_AFTER=$(dfx canister call $CANISTER getMyRequests)
 echo "$MY_AFTER"

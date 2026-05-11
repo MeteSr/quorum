@@ -21,15 +21,13 @@ if [ -z "$CANISTER_ID" ]; then
   exit 1
 fi
 
-# Ensure voter identities and capture their principals
+# Ensure voter identities exist, then capture principals without switching global identity
 for IDENT in quorum-voter-a quorum-voter-b quorum-voter-c; do
   dfx identity new "$IDENT" --storage-mode plaintext 2>/dev/null || true
 done
-_PREV=$(dfx identity whoami)
-dfx identity use quorum-voter-a 2>/dev/null || true; VOTER_A=$(dfx identity get-principal)
-dfx identity use quorum-voter-b 2>/dev/null || true; VOTER_B=$(dfx identity get-principal)
-dfx identity use quorum-voter-c 2>/dev/null || true; VOTER_C=$(dfx identity get-principal)
-dfx identity use "$_PREV"
+VOTER_A=$(dfx --identity quorum-voter-a identity get-principal)
+VOTER_B=$(dfx --identity quorum-voter-b identity get-principal)
+VOTER_C=$(dfx --identity quorum-voter-c identity get-principal)
 echo "Voter A: $VOTER_A"
 echo "Voter B: $VOTER_B"
 echo "Voter C: $VOTER_C"
@@ -81,31 +79,26 @@ fi
 # ─── [4] castVote — Yes from voter A ────────────────────────────────────────
 echo ""
 echo "── [4] castVote Yes — voter A ──────────────────────────────────────────"
-dfx identity use quorum-voter-a 2>/dev/null || true
-VOTE_A=$(dfx canister call $CANISTER castVote "(\"$PROP_ID\", variant { Yes })")
+VOTE_A=$(dfx --identity quorum-voter-a canister call $CANISTER castVote "(\"$PROP_ID\", variant { Yes })")
 echo "$VOTE_A"
 if echo "$VOTE_A" | grep -q "Yes"; then
   echo "  ✓ Voter A voted Yes"
 else
   echo "  ↳ ❌ Expected Yes vote in response"
-  dfx identity use default 2>/dev/null || true
   exit 1
 fi
 
 # ─── [5] castVote — No from voter B ─────────────────────────────────────────
 echo ""
 echo "── [5] castVote No — voter B ───────────────────────────────────────────"
-dfx identity use quorum-voter-b 2>/dev/null || true
-dfx canister call $CANISTER castVote "(\"$PROP_ID\", variant { No })"
+dfx --identity quorum-voter-b canister call $CANISTER castVote "(\"$PROP_ID\", variant { No })"
 echo "  ✓ Voter B voted No"
 
 # ─── [6] castVote — Abstain from voter C ────────────────────────────────────
 echo ""
 echo "── [6] castVote Abstain — voter C ─────────────────────────────────────"
-dfx identity use quorum-voter-c 2>/dev/null || true
-dfx canister call $CANISTER castVote "(\"$PROP_ID\", variant { Abstain })"
+dfx --identity quorum-voter-c canister call $CANISTER castVote "(\"$PROP_ID\", variant { Abstain })"
 echo "  ✓ Voter C abstained"
-dfx identity use default 2>/dev/null || true
 
 # ─── [7] getProposal — check vote counts ────────────────────────────────────
 echo ""
@@ -147,11 +140,8 @@ PASS_OUT=$(dfx canister call $CANISTER createProposal "(
 )")
 PASS_ID=$(echo "$PASS_OUT" | grep -oP '"PROP_[0-9]+"' | head -1 | tr -d '"')
 dfx canister call $CANISTER openProposal "(\"$PASS_ID\")" > /dev/null
-dfx identity use quorum-voter-a 2>/dev/null || true
-dfx canister call $CANISTER castVote "(\"$PASS_ID\", variant { Yes })" > /dev/null
-dfx identity use quorum-voter-b 2>/dev/null || true
-dfx canister call $CANISTER castVote "(\"$PASS_ID\", variant { Yes })" > /dev/null
-dfx identity use default 2>/dev/null || true
+dfx --identity quorum-voter-a canister call $CANISTER castVote "(\"$PASS_ID\", variant { Yes })" > /dev/null
+dfx --identity quorum-voter-b canister call $CANISTER castVote "(\"$PASS_ID\", variant { Yes })" > /dev/null
 PASS_FINAL=$(dfx canister call $CANISTER finalizeProposal "(\"$PASS_ID\")")
 echo "$PASS_FINAL"
 if echo "$PASS_FINAL" | grep -q "Passed"; then
@@ -168,11 +158,9 @@ DEADLINE2=$(( ($(date +%s) + 365 * 86400) * 1000000000 ))
 DUP_PROP=$(dfx canister call $CANISTER createProposal "(\"Dup Test\", \"test\", $DEADLINE2, 51)")
 DUP_ID=$(echo "$DUP_PROP" | grep -oP '"PROP_[0-9]+"' | head -1 | tr -d '"')
 dfx canister call $CANISTER openProposal "(\"$DUP_ID\")" > /dev/null
-dfx identity use quorum-voter-a 2>/dev/null || true
-dfx canister call $CANISTER castVote "(\"$DUP_ID\", variant { Yes })" > /dev/null
-dfx canister call $CANISTER castVote "(\"$DUP_ID\", variant { No })" \
+dfx --identity quorum-voter-a canister call $CANISTER castVote "(\"$DUP_ID\", variant { Yes })" > /dev/null
+dfx --identity quorum-voter-a canister call $CANISTER castVote "(\"$DUP_ID\", variant { No })" \
   && echo "  ↳ ❌ Expected AlreadyVoted" || echo "  ✓ AlreadyVoted returned"
-dfx identity use default 2>/dev/null || true
 
 # ─── [V2] castVote on non-Open proposal → NotOpen ───────────────────────────
 echo ""

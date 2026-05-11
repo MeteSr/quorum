@@ -31,6 +31,7 @@ ALL_CANISTERS=(
   documents
   announcements
   maintenance
+  violations
 )
 
 if [ $# -gt 0 ]; then

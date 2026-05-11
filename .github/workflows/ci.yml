@@ -90,7 +90,8 @@ jobs:
         run: |
           curl -fsSL "https://github.com/dfinity/sdk/releases/download/0.24.3/dfx-x86_64-unknown-linux-gnu.tar.gz" \
             | tar -xz
-          DFX_BIN=$(find . -name "dfx*" -type f -perm /111 | head -1)
+          DFX_BIN=$(find . -name "dfx" -type f -perm /111 2>/dev/null | head -1)
+          [ -z "$DFX_BIN" ] && DFX_BIN=$(find . -name "dfx*" -type f -perm /111 2>/dev/null | head -1)
           sudo install -m 755 "$DFX_BIN" /usr/local/bin/dfx
           dfx --version
 
@@ -114,6 +115,7 @@ jobs:
             rm -rf .mops/_tmp && mops toolchain init
             MOC_BIN=$(mops toolchain bin moc)
           fi
+          echo "moc: $MOC_BIN"
           "$MOC_BIN" --version
 
       - name: Start local replica
@@ -121,7 +123,7 @@ jobs:
 
       - name: Deploy canisters
         run: |
-          for canister in members governance treasury documents announcements maintenance; do
+          for canister in members governance treasury documents announcements maintenance violations; do
             dfx deploy "$canister"
           done
 
