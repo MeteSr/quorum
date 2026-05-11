@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-DEPLOY_SCRIPT_VERSION="0.7.3"
+DEPLOY_SCRIPT_VERSION="0.7.4"
 ENV=${1:-local}
 
 echo "============================================"
@@ -181,6 +181,21 @@ if [ "$ENV" = "local" ]; then
     echo "  → $canister"
     icp deploy "$canister" -e local 2>&1 | tail -3
   done
+
+  echo "▶ Saving local canister IDs to .dfx/local/canister_ids.json..."
+  mkdir -p ".dfx/local"
+  python3 - <<'PYEOF'
+import json, subprocess
+ids = {}
+for name in ["members","governance","treasury","documents","announcements","maintenance","violations","meetings","calendar","arc","parking","vendors","discussions"]:
+    result = subprocess.run(["icp","canister","id",name,"-e","local"],
+                            capture_output=True, text=True)
+    cid = result.stdout.strip()
+    if cid:
+        ids[name] = {"local": cid}
+json.dump(ids, open(".dfx/local/canister_ids.json","w"), indent=2)
+print(f"  ✓ Saved {len(ids)} canister IDs")
+PYEOF
 else
   if [ ${#CANISTERS_TO_CREATE[@]} -gt 0 ]; then
     echo "▶ Creating ${#CANISTERS_TO_CREATE[@]} new canister slot(s)..."

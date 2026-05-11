@@ -122,17 +122,8 @@ jobs:
           rm -rf "$TMP"
           ic-wasm --version
 
-      - name: Start local network
-        run: icp network start -d
-
-      - name: Mint local cycles
-        run: icp cycles mint 500000000000000 -e local || true
-
       - name: Deploy canisters
-        run: |
-          for canister in members governance treasury documents announcements maintenance violations meetings calendar arc parking vendors discussions; do
-            icp deploy "$canister" -e local
-          done
+        run: SKIP_FRONTEND=1 bash scripts/deploy.sh local
 
       - name: Run backend tests
         run: bash scripts/test-backend.sh
@@ -196,17 +187,8 @@ jobs:
       - name: Install frontend dependencies
         run: cd frontend && npm install
 
-      - name: Start local network
-        run: icp network start -d
-
-      - name: Mint local cycles
-        run: icp cycles mint 500000000000000 -e local || true
-
       - name: Deploy canisters
-        run: |
-          for canister in members governance treasury documents announcements maintenance violations meetings calendar arc parking vendors discussions; do
-            icp deploy "$canister" -e local
-          done
+        run: SKIP_FRONTEND=1 bash scripts/deploy.sh local
 
       - name: Run integration tests
         run: cd frontend && npm run test:integration

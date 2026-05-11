@@ -7,12 +7,11 @@
 #   npm run test:integration -- members  # filter to a specific test file
 #
 # Prerequisites:
-#   icp network start -d   (replica must be running)
-#   make deploy            (all canisters must be deployed)
+#   make deploy   (starts the replica, deploys all canisters, writes canister IDs)
 #
 # What it does:
 #   1. Checks the local replica is reachable
-#   2. Reads canister IDs via icp canister id <name> -e local
+#   2. Reads canister IDs from .dfx/local/canister_ids.json (written by deploy.sh)
 #   3. Exports them as CANISTER_ID_* env vars
 #   4. Runs vitest with the integration config
 # ─────────────────────────────────────────────────────────────────────────────
@@ -28,31 +27,44 @@ echo "▶ Checking local replica…"
 if ! curl -sf http://localhost:4943/api/v2/status >/dev/null 2>&1; then
   echo ""
   echo "  ✗ Local replica is not running."
-  echo "    Start it with:  icp network start -d"
-  echo "    Then deploy:    make deploy"
+  echo "    Deploy first with: make deploy"
   echo ""
   exit 1
 fi
 echo "  ✓ Replica is up"
 
-# ── 2. Read canister IDs from icp CLI ─────────────────────────────────────────
+# ── 2. Read canister IDs from deploy-time JSON ────────────────────────────────
 
-CANISTERS=(
-  members governance treasury documents announcements
-  maintenance violations meetings calendar arc parking vendors discussions
+CANISTER_IDS_FILE="$ROOT_DIR/.dfx/local/canister_ids.json"
+
+if [ ! -f "$CANISTER_IDS_FILE" ]; then
+  echo ""
+  echo "  ✗ No canister IDs found at $CANISTER_IDS_FILE"
+  echo "    Deploy first with: make deploy"
+  echo ""
+  exit 1
+fi
+
+echo "▶ Reading canister IDs from $CANISTER_IDS_FILE…"
+
+while IFS='=' read -r key value; do
+  export "$key=$value"
+done < <(
+  node -e "
+    const ids = require('$CANISTER_IDS_FILE');
+    for (const [name, nets] of Object.entries(ids)) {
+      const id = nets.local || '';
+      if (id) {
+        const upper = name.toUpperCase().replace(/-/g,'_');
+        console.log('CANISTER_ID_' + upper + '=' + id);
+      }
+    }
+  " 2>/dev/null || true
 )
 
-echo "▶ Reading canister IDs…"
-cd "$ROOT_DIR"
-for canister in "${CANISTERS[@]}"; do
-  _id=$(icp canister id "$canister" -e local 2>/dev/null || echo "")
-  if [ -n "$_id" ]; then
-    _upper=$(echo "$canister" | tr '[:lower:]' '[:upper:]')
-    export "CANISTER_ID_${_upper}=$_id"
-    echo "  CANISTER_ID_${_upper} = $_id"
-  else
-    echo "  ⚠  $canister not deployed — tests for this canister will be skipped"
-  fi
+echo "  Deployed canisters:"
+env | grep "CANISTER_ID_" | sort | while IFS='=' read -r k v; do
+  echo "    $k = $v"
 done
 
 # ── 3. Run vitest with integration config ─────────────────────────────────────
