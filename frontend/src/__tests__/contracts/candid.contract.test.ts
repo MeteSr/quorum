@@ -16,6 +16,7 @@ import { idlFactory as meetingsIdl }      from "../../services/meetings";
 import { idlFactory as calendarIdl }      from "../../services/calendar";
 import { idlFactory as arcIdl }           from "../../services/arc";
 import { idlFactory as parkingIdl }       from "../../services/parking";
+import { idlFactory as vendorsIdl }       from "../../services/vendors";
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
 
@@ -575,5 +576,87 @@ describe("parking IDL factory", () => {
 
   test("lookupVehicle takes 2 args (plateState, licensePlate)", () => {
     expect(methods.get("lookupVehicle")!.argTypes).toHaveLength(2);
+  });
+});
+
+// ─── Vendors ──────────────────────────────────────────────────────────────────
+
+describe("vendors IDL factory", () => {
+  let methods: ReturnType<typeof extractService>;
+  beforeAll(() => { methods = extractService(vendorsIdl); });
+
+  test("exposes all expected methods", () => {
+    const expected = [
+      "addVendor",
+      "addVendorReview",
+      "getAllVendors",
+      "getExpiringCOIs",
+      "getJobsForVendor",
+      "getVendor",
+      "getVendorsByCategory",
+      "logJob",
+      "removeVendor",
+      "updateCOI",
+      "updateVendor",
+    ];
+    expect([...methods.keys()].sort()).toEqual(expected);
+  });
+
+  test("addVendor is an update call with 6 args", () => {
+    const m = methods.get("addVendor")!;
+    expect(m.isQuery).toBe(false);
+    expect(m.argTypes).toHaveLength(6);
+  });
+
+  test("updateVendor is an update call with 6 args", () => {
+    const m = methods.get("updateVendor")!;
+    expect(m.isQuery).toBe(false);
+    expect(m.argTypes).toHaveLength(6);
+  });
+
+  test("removeVendor is an update call with 1 arg", () => {
+    const m = methods.get("removeVendor")!;
+    expect(m.isQuery).toBe(false);
+    expect(m.argTypes).toHaveLength(1);
+  });
+
+  test("addVendorReview is an update call with 2 args", () => {
+    const m = methods.get("addVendorReview")!;
+    expect(m.isQuery).toBe(false);
+    expect(m.argTypes).toHaveLength(2);
+  });
+
+  test("logJob is an update call with 5 args", () => {
+    const m = methods.get("logJob")!;
+    expect(m.isQuery).toBe(false);
+    expect(m.argTypes).toHaveLength(5);
+  });
+
+  test("updateCOI is an update call with 3 args", () => {
+    const m = methods.get("updateCOI")!;
+    expect(m.isQuery).toBe(false);
+    expect(m.argTypes).toHaveLength(3);
+  });
+
+  test("getAllVendors is a query", () => {
+    expect(methods.get("getAllVendors")!.isQuery).toBe(true);
+  });
+
+  test("getVendorsByCategory is a query with 1 arg", () => {
+    const m = methods.get("getVendorsByCategory")!;
+    expect(m.isQuery).toBe(true);
+    expect(m.argTypes).toHaveLength(1);
+  });
+
+  test("getJobsForVendor is a query with 1 arg", () => {
+    const m = methods.get("getJobsForVendor")!;
+    expect(m.isQuery).toBe(true);
+    expect(m.argTypes).toHaveLength(1);
+  });
+
+  test("getExpiringCOIs is a query with 1 arg", () => {
+    const m = methods.get("getExpiringCOIs")!;
+    expect(m.isQuery).toBe(true);
+    expect(m.argTypes).toHaveLength(1);
   });
 });

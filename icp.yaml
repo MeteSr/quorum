@@ -76,6 +76,13 @@ canisters:
         main: backend/parking/main.mo
         args: ""
 
+  - name: vendors
+    recipe:
+      type: "@dfinity/motoko@v4.0.0"
+      configuration:
+        main: backend/vendors/main.mo
+        args: ""
+
   - name: frontend
     recipe:
       type: "@dfinity/asset-canister@v2.1.0"
