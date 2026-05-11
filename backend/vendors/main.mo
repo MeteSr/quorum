@@ -140,7 +140,7 @@ persistent actor Vendors {
     switch (Map.get(vendors, Text.compare, id)) {
       case null { #err(#NotFound) };
       case (?_) {
-        Map.delete(vendors, Text.compare, id);
+        ignore Map.delete(vendors, Text.compare, id);
         #ok(())
       };
     }
