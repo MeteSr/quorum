@@ -121,14 +121,14 @@ jobs:
           rm -rf "$TMP"
           ic-wasm --version
 
-      - name: Deploy all canisters
-        # SKIP_FRONTEND=1: canister tests don't need the frontend build
+      - name: Deploy and test
+        # Run in one step so the PocketIC daemon started by deploy.sh stays
+        # alive for test-backend.sh (the process dies when the step's shell exits)
         env:
           SKIP_FRONTEND: '1'
-        run: bash scripts/deploy.sh
-
-      - name: Run backend integration tests
-        run: bash scripts/test-backend.sh
+        run: |
+          bash scripts/deploy.sh
+          bash scripts/test-backend.sh
 
   # ── Frontend: type check + unit tests + build ─────────────────────────────
   test-frontend:
