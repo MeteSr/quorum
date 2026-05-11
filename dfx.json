@@ -21,6 +21,10 @@
       "type": "motoko",
       "main": "backend/announcements/main.mo"
     },
+    "violations": {
+      "type": "motoko",
+      "main": "backend/violations/main.mo"
+    },
     "frontend": {
       "type": "assets",
       "source": ["frontend/dist"],
@@ -29,7 +33,8 @@
         "governance",
         "treasury",
         "documents",
-        "announcements"
+        "announcements",
+        "violations"
       ]
     }
   },

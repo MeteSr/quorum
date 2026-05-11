@@ -10,6 +10,7 @@ import { idlFactory as governanceIdl }    from "../../services/governance";
 import { idlFactory as treasuryIdl }      from "../../services/treasury";
 import { idlFactory as documentsIdl }     from "../../services/documents";
 import { idlFactory as announcementsIdl } from "../../services/announcements";
+import { idlFactory as violationsIdl }    from "../../services/violations";
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
 
@@ -217,5 +218,51 @@ describe("announcements IDL factory", () => {
 
   test("post takes 4 args", () => {
     expect(methods.get("post")!.argTypes).toHaveLength(4);
+  });
+});
+
+// ─── Violations ───────────────────────────────────────────────────────────────
+
+describe("violations IDL factory", () => {
+  let methods: ReturnType<typeof extractService>;
+  beforeAll(() => { methods = extractService(violationsIdl); });
+
+  test("exposes all expected methods", () => {
+    const expected = [
+      "addReply",
+      "createViolation",
+      "getAllViolations",
+      "getMyViolations",
+      "getViolation",
+      "getViolationsForUnit",
+      "updateStatus",
+    ];
+    expect([...methods.keys()].sort()).toEqual(expected);
+  });
+
+  test("createViolation is an update call", () => {
+    expect(methods.get("createViolation")!.isQuery).toBe(false);
+  });
+
+  test("getAllViolations is a query", () => {
+    expect(methods.get("getAllViolations")!.isQuery).toBe(true);
+  });
+
+  test("addReply is an update call", () => {
+    expect(methods.get("addReply")!.isQuery).toBe(false);
+  });
+
+  test("updateStatus is an update call", () => {
+    expect(methods.get("updateStatus")!.isQuery).toBe(false);
+  });
+
+  test("createViolation takes 4 args", () => {
+    expect(methods.get("createViolation")!.argTypes).toHaveLength(4);
+  });
+
+  test("getViolationsForUnit is a query with 1 arg", () => {
+    const m = methods.get("getViolationsForUnit")!;
+    expect(m.isQuery).toBe(true);
+    expect(m.argTypes).toHaveLength(1);
   });
 });

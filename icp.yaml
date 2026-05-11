@@ -34,6 +34,13 @@ canisters:
         main: backend/announcements/main.mo
         args: ""
 
+  - name: violations
+    recipe:
+      type: "@dfinity/motoko@v4.0.0"
+      configuration:
+        main: backend/violations/main.mo
+        args: ""
+
   - name: frontend
     recipe:
       type: "@dfinity/asset-canister@v2.1.0"
