@@ -1031,6 +1031,7 @@ describe("benefit IDL factory", () => {
       "generateCoupon",
       "getCoupon",
       "metrics",
+      "redeemCoupon",
     ]);
   });
 
@@ -1044,6 +1045,12 @@ describe("benefit IDL factory", () => {
     const m = methods.get("getCoupon")!;
     expect(m.isQuery).toBe(false);
     expect(m.argTypes).toHaveLength(0);
+  });
+
+  test("redeemCoupon is an update call with 1 text arg", () => {
+    const m = methods.get("redeemCoupon")!;
+    expect(m.isQuery).toBe(false);
+    expect(m.argTypes).toHaveLength(1);
   });
 
   test("benefit metrics is a query with 0 args", () => {

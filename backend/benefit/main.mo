@@ -1,3 +1,4 @@
+import Array     "mo:core/Array";
 import Iter      "mo:core/Iter";
 import Map       "mo:core/Map";
 import Nat       "mo:core/Nat";
@@ -11,14 +12,20 @@ persistent actor Benefit {
   // ─── Types ───────────────────────────────────────────────────────────────────
 
   public type CouponRecord = {
-    code:     Text;
-    issuedAt: Time.Time;
+    code:        Text;
+    issuedAt:    Time.Time;
+    redeemedAt:  ?Time.Time;   // null until HomeGentic calls redeemCoupon
   };
 
-  public type Error = { #NotAuthorized };
+  public type Error = {
+    #NotAuthorized;
+    #NotFound;
+    #AlreadyRedeemed;
+  };
 
   public type MetricsResult = {
-    totalIssued: Nat;
+    totalIssued:   Nat;
+    totalRedeemed: Nat;
   };
 
   // ─── Stable State ─────────────────────────────────────────────────────────────
@@ -53,8 +60,7 @@ persistent actor Benefit {
       case (?existing) { #ok(existing) };
       case null {
         couponCounter += 1;
-        let code   = "QUORUM-" # padNat(couponCounter, 6);
-        let record = { code; issuedAt = Time.now() };
+        let record = { code = "QUORUM-" # padNat(couponCounter, 6); issuedAt = Time.now(); redeemedAt = null };
         Map.add(coupons, Text.compare, key, record);
         #ok(record)
       };
@@ -66,7 +72,34 @@ persistent actor Benefit {
     Map.get(coupons, Text.compare, Principal.toText(msg.caller))
   };
 
+  // Called by HomeGentic after a successful checkout. Marks the code as one-use.
+  // Returns #AlreadyRedeemed if the code was already used, #NotFound if unknown.
+  public shared(msg) func redeemCoupon(code : Text) : async Result.Result<CouponRecord, Error> {
+    if (Principal.isAnonymous(msg.caller)) return #err(#NotAuthorized);
+    let allRecords = Iter.toArray(Map.values(coupons));
+    let matches = Array.filter<CouponRecord>(allRecords, func(r) { r.code == code });
+    if (matches.size() == 0) return #err(#NotFound);
+    let record = matches[0];
+    switch (record.redeemedAt) {
+      case (?_) { #err(#AlreadyRedeemed) };
+      case null {
+        let redeemed = { record with redeemedAt = ?Time.now() };
+        // Update by principal key — scan to find it
+        let principalKey = Array.filter<(Text, CouponRecord)>(
+          Iter.toArray(Map.entries(coupons)),
+          func((_, r)) { r.code == code }
+        );
+        if (principalKey.size() > 0) {
+          Map.add(coupons, Text.compare, principalKey[0].0, redeemed);
+        };
+        #ok(redeemed)
+      };
+    }
+  };
+
   public query func metrics() : async MetricsResult {
-    { totalIssued = couponCounter }
+    let all = Iter.toArray(Map.values(coupons));
+    let redeemed = Array.filter<CouponRecord>(all, func(r) { r.redeemedAt != null });
+    { totalIssued = couponCounter; totalRedeemed = redeemed.size() }
   };
 };

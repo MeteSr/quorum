@@ -117,32 +117,48 @@ export default function MemberBenefitsPage() {
           <div style={{ fontFamily: S.mono, fontSize: "0.7rem", color: S.inkLight }}>Loading…</div>
         ) : coupon ? (
           <div>
-            <div style={{ fontFamily: S.mono, fontSize: "0.6rem", textTransform: "uppercase", letterSpacing: "0.1em", color: S.inkLight, marginBottom: "0.4rem" }}>
-              Your discount code
+            <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", marginBottom: "0.4rem" }}>
+              <div style={{ fontFamily: S.mono, fontSize: "0.6rem", textTransform: "uppercase", letterSpacing: "0.1em", color: S.inkLight }}>
+                Your discount code
+              </div>
+              {coupon.redeemedAt.length > 0 && (
+                <div style={{
+                  fontFamily: S.mono, fontSize: "0.55rem", letterSpacing: "0.1em",
+                  textTransform: "uppercase", background: S.navy, color: "white",
+                  padding: "0.2rem 0.5rem",
+                }}>
+                  Redeemed
+                </div>
+              )}
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", flexWrap: "wrap" }}>
               <div style={{
                 fontFamily: S.mono, fontSize: "1.25rem", letterSpacing: "0.12em",
                 background: "#F4F1EB", border: `1px solid ${S.rule}`,
-                padding: "0.5rem 1.25rem", color: S.ink,
+                padding: "0.5rem 1.25rem", color: coupon.redeemedAt.length > 0 ? S.inkLight : S.ink,
+                textDecoration: coupon.redeemedAt.length > 0 ? "line-through" : "none",
               }}>
                 {coupon.code}
               </div>
-              <button
-                onClick={copyCode}
-                style={{
-                  background: copied ? S.rust : "white", color: copied ? "white" : S.ink,
-                  border: `1px solid ${S.rule}`, fontFamily: S.mono,
-                  fontSize: "0.62rem", letterSpacing: "0.1em", textTransform: "uppercase",
-                  padding: "0.5rem 0.9rem", cursor: "pointer", minHeight: 44,
-                  transition: "background 0.15s",
-                }}
-              >
-                {copied ? "Copied!" : "Copy"}
-              </button>
+              {coupon.redeemedAt.length === 0 && (
+                <button
+                  onClick={copyCode}
+                  style={{
+                    background: copied ? S.rust : "white", color: copied ? "white" : S.ink,
+                    border: `1px solid ${S.rule}`, fontFamily: S.mono,
+                    fontSize: "0.62rem", letterSpacing: "0.1em", textTransform: "uppercase",
+                    padding: "0.5rem 0.9rem", cursor: "pointer", minHeight: 44,
+                    transition: "background 0.15s",
+                  }}
+                >
+                  {copied ? "Copied!" : "Copy"}
+                </button>
+              )}
             </div>
             <div style={{ fontFamily: S.sans, fontSize: "0.75rem", color: S.inkLight, marginTop: "0.5rem" }}>
-              Valid for 12 months · Unique to your account · Non-transferable
+              {coupon.redeemedAt.length > 0
+                ? "This code has been redeemed. Contact your HOA board if you need a replacement."
+                : "Valid for 12 months · Unique to your account · Non-transferable"}
             </div>
           </div>
         ) : (

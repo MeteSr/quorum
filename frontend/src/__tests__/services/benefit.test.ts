@@ -10,21 +10,29 @@ vi.mock("@icp-sdk/core/agent", () => ({
 }));
 
 import { Actor } from "@icp-sdk/core/agent";
-import { generateCoupon, getCoupon, getMetrics } from "@/services/benefit";
+import { generateCoupon, getCoupon, redeemCoupon, getMetrics } from "@/services/benefit";
 
 const MOCK_COUPON = {
-  code:     "QUORUM-000001",
-  issuedAt: BigInt(1_700_000_000_000_000_000),
+  code:        "QUORUM-000001",
+  issuedAt:    BigInt(1_700_000_000_000_000_000),
+  redeemedAt:  [] as [],
+};
+
+const MOCK_COUPON_REDEEMED = {
+  ...MOCK_COUPON,
+  redeemedAt: [BigInt(1_700_000_001_000_000_000)] as [bigint],
 };
 
 const MOCK_METRICS = {
-  totalIssued: BigInt(42),
+  totalIssued:   BigInt(42),
+  totalRedeemed: BigInt(7),
 };
 
 function makeMockActor(overrides: Record<string, any> = {}) {
   return {
     generateCoupon: vi.fn().mockResolvedValue({ ok: MOCK_COUPON }),
     getCoupon:      vi.fn().mockResolvedValue([MOCK_COUPON]),
+    redeemCoupon:   vi.fn().mockResolvedValue({ ok: MOCK_COUPON_REDEEMED }),
     metrics:        vi.fn().mockResolvedValue(MOCK_METRICS),
     ...overrides,
   };
@@ -74,6 +82,34 @@ describe("benefit service — getCoupon", () => {
   });
 });
 
+describe("benefit service — redeemCoupon", () => {
+  beforeEach(() => vi.mocked(Actor.createActor).mockReturnValue(makeMockActor() as any));
+
+  it("returns ok with redeemedAt set after redemption", async () => {
+    const result = await redeemCoupon("QUORUM-000001");
+    expect(result).toHaveProperty("ok");
+    expect((result as any).ok.redeemedAt).toHaveLength(1);
+  });
+
+  it("returns err AlreadyRedeemed if the code was already used", async () => {
+    vi.mocked(Actor.createActor).mockReturnValue(
+      makeMockActor({ redeemCoupon: vi.fn().mockResolvedValue({ err: { AlreadyRedeemed: null } }) }) as any
+    );
+    const result = await redeemCoupon("QUORUM-000001");
+    expect(result).toHaveProperty("err");
+    expect((result as any).err).toHaveProperty("AlreadyRedeemed");
+  });
+
+  it("returns err NotFound for an unknown code", async () => {
+    vi.mocked(Actor.createActor).mockReturnValue(
+      makeMockActor({ redeemCoupon: vi.fn().mockResolvedValue({ err: { NotFound: null } }) }) as any
+    );
+    const result = await redeemCoupon("QUORUM-BOGUS");
+    expect(result).toHaveProperty("err");
+    expect((result as any).err).toHaveProperty("NotFound");
+  });
+});
+
 describe("benefit service — getMetrics", () => {
   beforeEach(() => vi.mocked(Actor.createActor).mockReturnValue(makeMockActor() as any));
 
@@ -81,5 +117,11 @@ describe("benefit service — getMetrics", () => {
     const result = await getMetrics();
     expect(result).not.toBeNull();
     expect(result!.totalIssued).toBe(BigInt(42));
+  });
+
+  it("returns total redeemed coupon count", async () => {
+    const result = await getMetrics();
+    expect(result).not.toBeNull();
+    expect(result!.totalRedeemed).toBe(BigInt(7));
   });
 });
