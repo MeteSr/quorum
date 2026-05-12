@@ -102,6 +102,46 @@ export function idlFactory({ IDL }: { IDL: any }) {
   const ResultAssessment    = IDL.Variant({ ok: Assessment,      err: Error });
   const ResultCheckout      = IDL.Variant({ ok: CheckoutSession, err: Error });
 
+  const AgingBucket = IDL.Record({ unitId: IDL.Text, amountCents: IDL.Nat });
+  const AgingReport = IDL.Record({
+    current:               IDL.Vec(AgingBucket),
+    days31_60:             IDL.Vec(AgingBucket),
+    days61_90:             IDL.Vec(AgingBucket),
+    days90plus:            IDL.Vec(AgingBucket),
+    totalOutstandingCents: IDL.Nat,
+  });
+
+  const BudgetVsActual = IDL.Record({
+    category:      IDL.Text,
+    budgetedCents: IDL.Nat,
+    actualCents:   IDL.Nat,
+    varianceCents: IDL.Int,
+  });
+
+  const ReserveFundReport = IDL.Record({
+    currentBalanceCents:     IDL.Nat,
+    annualIncomeCents:       IDL.Nat,
+    recommendedBalanceCents: IDL.Nat,
+    fundingGapCents:         IDL.Int,
+  });
+
+  const IncomeStatement = IDL.Record({
+    startDate:               IDL.Int,
+    endDate:                 IDL.Int,
+    totalIncomeCents:        IDL.Nat,
+    netOperatingIncomeCents: IDL.Int,
+  });
+
+  const AnnualStatement = IDL.Record({
+    unitId:           IDL.Text,
+    year:             IDL.Nat,
+    payments:         IDL.Vec(DuesPayment),
+    totalBilledCents: IDL.Nat,
+    totalPaidCents:   IDL.Nat,
+    outstandingCents: IDL.Nat,
+    generatedAt:      IDL.Int,
+  });
+
   return IDL.Service({
     // wiring
     setMembersCanisterId:       IDL.Func([IDL.Text],                     [],                            []),
@@ -126,8 +166,17 @@ export function idlFactory({ IDL }: { IDL: any }) {
     getLateFeePolicy:           IDL.Func([],                              [IDL.Opt(LateFeePolicy)],      ["query"]),
     getReminderPolicy:          IDL.Func([],                              [IDL.Opt(ReminderPolicy)],     ["query"]),
     metrics:                    IDL.Func([],                              [Metrics],                     ["query"]),
-    // transform (required by outcall library)
+    // transform (IC HTTP outcall consensus)
     transform:                  IDL.Func([IDL.Record({ context: IDL.Vec(IDL.Nat8), response: IDL.Record({ status: IDL.Nat, headers: IDL.Vec(IDL.Record({ name: IDL.Text, value: IDL.Text })), body: IDL.Vec(IDL.Nat8) }) })], [IDL.Record({ status: IDL.Nat, headers: IDL.Vec(IDL.Record({ name: IDL.Text, value: IDL.Text })), body: IDL.Vec(IDL.Nat8) })], ["query"]),
+    // reporting (#15)
+    getAgingReport:             IDL.Func([],                              [AgingReport],                 ["query"]),
+    getReserveFundReport:       IDL.Func([],                              [ReserveFundReport],           ["query"]),
+    getBudgetVsActual:          IDL.Func([IDL.Nat],                       [IDL.Vec(BudgetVsActual)],     ["query"]),
+    getIncomeStatement:         IDL.Func([IDL.Int, IDL.Int],              [IncomeStatement],             ["query"]),
+    setReserveFundBalance:      IDL.Func([IDL.Nat],                       [],                            []),
+    setBudgetLine:              IDL.Func([IDL.Nat, IDL.Text, IDL.Nat],    [],                            []),
+    // annual statement (#41)
+    getAnnualStatement:         IDL.Func([IDL.Text, IDL.Nat],             [AnnualStatement],             ["query"]),
   });
 }
 
@@ -332,4 +381,101 @@ export async function getMetrics(): Promise<TreasuryMetrics | null> {
   const actor = await createActor() as any;
   if (!actor) return null;
   return actor.metrics();
+}
+
+// ─── Reporting types (#15 + #41) ─────────────────────────────────────────────
+
+export interface AgingBucket { unitId: string; amountCents: bigint; }
+
+export interface AgingReport {
+  current:               AgingBucket[];
+  days31_60:             AgingBucket[];
+  days61_90:             AgingBucket[];
+  days90plus:            AgingBucket[];
+  totalOutstandingCents: bigint;
+}
+
+export interface BudgetVsActual {
+  category:      string;
+  budgetedCents: bigint;
+  actualCents:   bigint;
+  varianceCents: bigint;
+}
+
+export interface ReserveFundReport {
+  currentBalanceCents:     bigint;
+  annualIncomeCents:       bigint;
+  recommendedBalanceCents: bigint;
+  fundingGapCents:         bigint;
+}
+
+export interface IncomeStatement {
+  startDate:               bigint;
+  endDate:                 bigint;
+  totalIncomeCents:        bigint;
+  netOperatingIncomeCents: bigint;
+}
+
+export interface AnnualStatement {
+  unitId:           string;
+  year:             bigint;
+  payments:         DuesPayment[];
+  totalBilledCents: bigint;
+  totalPaidCents:   bigint;
+  outstandingCents: bigint;
+  generatedAt:      bigint;
+}
+
+// ─── Reporting service functions ──────────────────────────────────────────────
+
+export async function getAgingReport(): Promise<AgingReport | null> {
+  const actor = await createActor() as any;
+  if (!actor) return null;
+  return actor.getAgingReport();
+}
+
+export async function getReserveFundReport(): Promise<ReserveFundReport | null> {
+  const actor = await createActor() as any;
+  if (!actor) return null;
+  return actor.getReserveFundReport();
+}
+
+export async function getBudgetVsActual(year: number): Promise<BudgetVsActual[]> {
+  const actor = await createActor() as any;
+  if (!actor) return [];
+  return actor.getBudgetVsActual(BigInt(year));
+}
+
+export async function getIncomeStatement(
+  startDate: bigint,
+  endDate:   bigint,
+): Promise<IncomeStatement | null> {
+  const actor = await createActor() as any;
+  if (!actor) return null;
+  return actor.getIncomeStatement(startDate, endDate);
+}
+
+export async function getAnnualStatement(
+  unitId: string,
+  year:   number,
+): Promise<AnnualStatement | null> {
+  const actor = await createActor() as any;
+  if (!actor) return null;
+  return actor.getAnnualStatement(unitId, BigInt(year));
+}
+
+export async function setReserveFundBalance(balance: bigint): Promise<void> {
+  const actor = await createActor() as any;
+  if (!actor) return;
+  return actor.setReserveFundBalance(balance);
+}
+
+export async function setBudgetLine(
+  year:          number,
+  category:      string,
+  budgetedCents: bigint,
+): Promise<void> {
+  const actor = await createActor() as any;
+  if (!actor) return;
+  return actor.setBudgetLine(BigInt(year), category, budgetedCents);
 }

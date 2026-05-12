@@ -198,6 +198,86 @@ describe.skipIf(!deployed)("setReminderPolicy / getReminderPolicy persistence", 
   });
 });
 
+// ─── Reporting queries (#15) ─────────────────────────────────────────────────
+
+describe.skipIf(!deployed)("getAgingReport — bucket structure", () => {
+  it("returns report with all four buckets as arrays", async () => {
+    const a = await getActor();
+    const r = await a.getAgingReport() as any;
+    expect(Array.isArray(r.current)).toBe(true);
+    expect(Array.isArray(r.days31_60)).toBe(true);
+    expect(Array.isArray(r.days61_90)).toBe(true);
+    expect(Array.isArray(r.days90plus)).toBe(true);
+  });
+
+  it("totalOutstandingCents is a BigInt", async () => {
+    const a = await getActor();
+    const r = await a.getAgingReport() as any;
+    expect(typeof r.totalOutstandingCents).toBe("bigint");
+  });
+});
+
+describe.skipIf(!deployed)("getReserveFundReport — balance + recommendation", () => {
+  it("setReserveFundBalance persists and getReserveFundReport reflects it", async () => {
+    const a = await getActor();
+    await a.setReserveFundBalance(BigInt(5_000_000));
+    const r = await a.getReserveFundReport() as any;
+    expect(r.currentBalanceCents).toBe(BigInt(5_000_000));
+    expect(typeof r.recommendedBalanceCents).toBe("bigint");
+    expect(typeof r.fundingGapCents).toBe("bigint");
+  });
+});
+
+describe.skipIf(!deployed)("getBudgetVsActual — five categories always returned", () => {
+  it("returns exactly 5 category rows", async () => {
+    const a = await getActor();
+    const rows = await a.getBudgetVsActual(BigInt(2025)) as any[];
+    expect(rows).toHaveLength(5);
+    expect(rows.map((r: any) => r.category).sort()).toEqual(
+      ["Amenity", "Fine", "LateFee", "MonthlyDues", "SpecialAssessment"]
+    );
+  });
+
+  it("setBudgetLine persists and getBudgetVsActual reflects it", async () => {
+    const a = await getActor();
+    await a.setBudgetLine(BigInt(2025), "MonthlyDues", BigInt(12_000_000));
+    const rows = await a.getBudgetVsActual(BigInt(2025)) as any[];
+    const dues = rows.find((r: any) => r.category === "MonthlyDues");
+    expect(dues!.budgetedCents).toBe(BigInt(12_000_000));
+  });
+});
+
+describe.skipIf(!deployed)("getIncomeStatement — date range filter", () => {
+  it("returns totalIncomeCents as BigInt", async () => {
+    const a     = await getActor();
+    const start = BigInt(1_735_689_600_000_000_000);
+    const end   = BigInt(1_767_225_600_000_000_000);
+    const stmt  = await a.getIncomeStatement(start, end) as any;
+    expect(typeof stmt.totalIncomeCents).toBe("bigint");
+    expect(stmt.startDate).toBe(start);
+    expect(stmt.endDate).toBe(end);
+  });
+});
+
+describe.skipIf(!deployed)("getAnnualStatement — data retrieval (#41)", () => {
+  it("returns statement with payments array for the unit", async () => {
+    const a    = await getActor();
+    const stmt = await a.getAnnualStatement(UNIT_ID, BigInt(2025)) as any;
+    expect(stmt.unitId).toBe(UNIT_ID);
+    expect(Array.isArray(stmt.payments)).toBe(true);
+    expect(typeof stmt.totalPaidCents).toBe("bigint");
+    expect(typeof stmt.totalBilledCents).toBe("bigint");
+    expect(typeof stmt.outstandingCents).toBe("bigint");
+  });
+
+  it("returns empty payments for a unit with no history in the year", async () => {
+    const a    = await getActor();
+    const stmt = await a.getAnnualStatement(`no-history-${RUN_ID}`, BigInt(2025)) as any;
+    expect(stmt.payments).toHaveLength(0);
+    expect(stmt.totalPaidCents).toBe(BigInt(0));
+  });
+});
+
 // ─── metrics() ───────────────────────────────────────────────────────────────
 
 describe.skipIf(!deployed)("metrics() — aggregate counters", () => {

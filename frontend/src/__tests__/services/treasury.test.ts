@@ -24,6 +24,13 @@ import {
   getReminderPolicy,
   setLateFeePolicy,
   setReminderPolicy,
+  getAgingReport,
+  getReserveFundReport,
+  getBudgetVsActual,
+  getIncomeStatement,
+  getAnnualStatement,
+  setReserveFundBalance,
+  setBudgetLine,
 } from "@/services/treasury";
 
 const MOCK_ASSESSMENT = {
@@ -65,6 +72,43 @@ const MOCK_REMINDER = {
   sentAt:       BigInt(1_743_465_600_000_000_000),
 };
 
+const MOCK_AGING_REPORT = {
+  current:               [{ unitId: "12A", amountCents: BigInt(15000) }],
+  days31_60:             [],
+  days61_90:             [],
+  days90plus:            [{ unitId: "7B", amountCents: BigInt(30000) }],
+  totalOutstandingCents: BigInt(45000),
+};
+
+const MOCK_RESERVE_REPORT = {
+  currentBalanceCents:     BigInt(5_000_000),
+  annualIncomeCents:       BigInt(12_000_000),
+  recommendedBalanceCents: BigInt(3_600_000),
+  fundingGapCents:         BigInt(1_400_000),
+};
+
+const MOCK_BUDGET_VS_ACTUAL = [
+  { category: "MonthlyDues", budgetedCents: BigInt(12_000_000), actualCents: BigInt(11_000_000), varianceCents: BigInt(-1_000_000) },
+  { category: "Fine",        budgetedCents: BigInt(500_000),    actualCents: BigInt(750_000),    varianceCents: BigInt(250_000)    },
+];
+
+const MOCK_INCOME_STATEMENT = {
+  startDate:               BigInt(1_704_067_200_000_000_000),
+  endDate:                 BigInt(1_735_689_600_000_000_000),
+  totalIncomeCents:        BigInt(11_000_000),
+  netOperatingIncomeCents: BigInt(11_000_000),
+};
+
+const MOCK_ANNUAL_STATEMENT = {
+  unitId:           "12A",
+  year:             BigInt(2025),
+  payments:         [MOCK_PAYMENT],
+  totalBilledCents: BigInt(15000),
+  totalPaidCents:   BigInt(15000),
+  outstandingCents: BigInt(0),
+  generatedAt:      BigInt(1_735_689_600_000_000_000),
+};
+
 function makeMockActor(overrides: Record<string, any> = {}) {
   return {
     getOutstandingAssessments: vi.fn().mockResolvedValue([MOCK_ASSESSMENT]),
@@ -81,6 +125,13 @@ function makeMockActor(overrides: Record<string, any> = {}) {
     getReminderPolicy:         vi.fn().mockResolvedValue([{ preDueDays: [BigInt(7), BigInt(3), BigInt(1)], postDueDays: [BigInt(1), BigInt(7), BigInt(14)] }]),
     setLateFeePolicy:          vi.fn().mockResolvedValue(undefined),
     setReminderPolicy:         vi.fn().mockResolvedValue(undefined),
+    getAgingReport:            vi.fn().mockResolvedValue(MOCK_AGING_REPORT),
+    getReserveFundReport:      vi.fn().mockResolvedValue(MOCK_RESERVE_REPORT),
+    getBudgetVsActual:         vi.fn().mockResolvedValue(MOCK_BUDGET_VS_ACTUAL),
+    getIncomeStatement:        vi.fn().mockResolvedValue(MOCK_INCOME_STATEMENT),
+    getAnnualStatement:        vi.fn().mockResolvedValue(MOCK_ANNUAL_STATEMENT),
+    setReserveFundBalance:     vi.fn().mockResolvedValue(undefined),
+    setBudgetLine:             vi.fn().mockResolvedValue(undefined),
     ...overrides,
   };
 }
@@ -242,5 +293,126 @@ describe("treasury service — late fee + reminder policy (#27 #32)", () => {
     const policy = { preDueDays: [BigInt(3), BigInt(1)], postDueDays: [BigInt(7)] };
     await setReminderPolicy(policy);
     expect(spy).toHaveBeenCalledWith(policy);
+  });
+});
+
+describe("treasury service — aging report (#15)", () => {
+  beforeEach(() => vi.mocked(Actor.createActor).mockReturnValue(makeMockActor() as any));
+
+  it("returns aging report with all four buckets", async () => {
+    const report = await getAgingReport();
+    expect(report).not.toBeNull();
+    expect(report!.current).toHaveLength(1);
+    expect(report!.days90plus).toHaveLength(1);
+    expect(report!.days31_60).toHaveLength(0);
+  });
+
+  it("totalOutstandingCents is a bigint sum", async () => {
+    const report = await getAgingReport();
+    expect(typeof report!.totalOutstandingCents).toBe("bigint");
+    expect(report!.totalOutstandingCents).toBe(BigInt(45000));
+  });
+
+  it("returns null when canister not deployed", async () => {
+    (process.env as any).CANISTER_ID_TREASURY = "";
+    vi.resetModules();
+    const { getAgingReport: fn } = await import("@/services/treasury");
+    const result = await fn();
+    expect(result).toBeNull();
+    (process.env as any).CANISTER_ID_TREASURY = "rdmx6-jaaaa-aaaah-test-cai";
+  });
+});
+
+describe("treasury service — reserve fund report (#15)", () => {
+  beforeEach(() => vi.mocked(Actor.createActor).mockReturnValue(makeMockActor() as any));
+
+  it("returns report with all four fields", async () => {
+    const report = await getReserveFundReport();
+    expect(report).not.toBeNull();
+    expect(typeof report!.currentBalanceCents).toBe("bigint");
+    expect(typeof report!.fundingGapCents).toBe("bigint");
+    expect(report!.recommendedBalanceCents).toBe(BigInt(3_600_000));
+  });
+
+  it("setReserveFundBalance calls actor with bigint", async () => {
+    const spy = vi.fn().mockResolvedValue(undefined);
+    vi.mocked(Actor.createActor).mockReturnValue(makeMockActor({ setReserveFundBalance: spy }) as any);
+    await setReserveFundBalance(BigInt(8_000_000));
+    expect(spy).toHaveBeenCalledWith(BigInt(8_000_000));
+  });
+});
+
+describe("treasury service — budget vs actual (#15)", () => {
+  beforeEach(() => vi.mocked(Actor.createActor).mockReturnValue(makeMockActor() as any));
+
+  it("returns array with category entries", async () => {
+    const rows = await getBudgetVsActual(2025);
+    expect(rows).toHaveLength(2);
+    expect(rows[0].category).toBe("MonthlyDues");
+    expect(typeof rows[0].varianceCents).toBe("bigint");
+  });
+
+  it("passes year as BigInt to actor", async () => {
+    const spy = vi.fn().mockResolvedValue(MOCK_BUDGET_VS_ACTUAL);
+    vi.mocked(Actor.createActor).mockReturnValue(makeMockActor({ getBudgetVsActual: spy }) as any);
+    await getBudgetVsActual(2025);
+    expect(spy).toHaveBeenCalledWith(BigInt(2025));
+  });
+
+  it("setBudgetLine passes correct args", async () => {
+    const spy = vi.fn().mockResolvedValue(undefined);
+    vi.mocked(Actor.createActor).mockReturnValue(makeMockActor({ setBudgetLine: spy }) as any);
+    await setBudgetLine(2025, "MonthlyDues", BigInt(12_000_000));
+    expect(spy).toHaveBeenCalledWith(BigInt(2025), "MonthlyDues", BigInt(12_000_000));
+  });
+});
+
+describe("treasury service — income statement (#15)", () => {
+  beforeEach(() => vi.mocked(Actor.createActor).mockReturnValue(makeMockActor() as any));
+
+  it("returns statement with income fields", async () => {
+    const start = BigInt(1_704_067_200_000_000_000);
+    const end   = BigInt(1_735_689_600_000_000_000);
+    const stmt  = await getIncomeStatement(start, end);
+    expect(stmt).not.toBeNull();
+    expect(typeof stmt!.totalIncomeCents).toBe("bigint");
+    expect(stmt!.totalIncomeCents).toBe(BigInt(11_000_000));
+  });
+
+  it("passes start and end dates to actor", async () => {
+    const spy   = vi.fn().mockResolvedValue(MOCK_INCOME_STATEMENT);
+    vi.mocked(Actor.createActor).mockReturnValue(makeMockActor({ getIncomeStatement: spy }) as any);
+    const start = BigInt(1_704_067_200_000_000_000);
+    const end   = BigInt(1_735_689_600_000_000_000);
+    await getIncomeStatement(start, end);
+    expect(spy).toHaveBeenCalledWith(start, end);
+  });
+});
+
+describe("treasury service — annual statement (#41)", () => {
+  beforeEach(() => vi.mocked(Actor.createActor).mockReturnValue(makeMockActor() as any));
+
+  it("returns statement with payments array", async () => {
+    const stmt = await getAnnualStatement("12A", 2025);
+    expect(stmt).not.toBeNull();
+    expect(stmt!.unitId).toBe("12A");
+    expect(stmt!.payments).toHaveLength(1);
+    expect(typeof stmt!.totalPaidCents).toBe("bigint");
+  });
+
+  it("passes unitId and year as BigInt to actor", async () => {
+    const spy = vi.fn().mockResolvedValue(MOCK_ANNUAL_STATEMENT);
+    vi.mocked(Actor.createActor).mockReturnValue(makeMockActor({ getAnnualStatement: spy }) as any);
+    await getAnnualStatement("12A", 2025);
+    expect(spy).toHaveBeenCalledWith("12A", BigInt(2025));
+  });
+
+  it("returns null when canister not deployed", async () => {
+    (process.env as any).CANISTER_ID_TREASURY = "";
+    vi.resetModules();
+    const { getAnnualStatement: fn } = await import("@/services/treasury");
+    const result = await fn("12A", 2025);
+    expect(result).toBeNull();
+    (process.env as any).CANISTER_ID_TREASURY = "rdmx6-jaaaa-aaaah-test-cai";
   });
 });
