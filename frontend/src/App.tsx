@@ -20,7 +20,9 @@ import AmenitiesPage    from "@/pages/AmenitiesPage";
 import MarketplacePage  from "@/pages/MarketplacePage";
 import ElectionsPage       from "@/pages/ElectionsPage";
 import MemberBenefitsPage  from "@/pages/MemberBenefitsPage";
+import MembersPage         from "@/pages/MembersPage";
 import PWAInstallBanner     from "@/components/PWAInstallBanner";
+import ShareView            from "@/pages/ShareView";
 
 const S = {
   paper:    "#F9F6F0",
@@ -48,6 +50,7 @@ const NAV_TABS = [
   { to: "/marketplace",  label: "Marketplace"   },
   { to: "/elections",    label: "Elections"     },
   { to: "/benefits",     label: "Benefits"      },
+  { to: "/members",      label: "Members"       },
 ] as const;
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
@@ -129,6 +132,7 @@ function AppShell() {
             <Route path="/marketplace"   element={<ProtectedRoute><MarketplacePage /></ProtectedRoute>} />
             <Route path="/elections"     element={<ProtectedRoute><ElectionsPage /></ProtectedRoute>} />
             <Route path="/benefits"      element={<ProtectedRoute><MemberBenefitsPage /></ProtectedRoute>} />
+            <Route path="/members"       element={<ProtectedRoute><MembersPage /></ProtectedRoute>} />
             <Route path="*"              element={<Navigate to="/" replace />} />
           </Routes>
         )}
@@ -140,9 +144,14 @@ function AppShell() {
 export default function App() {
   return (
     <BrowserRouter>
-      <AuthProvider>
-        <AppShell />
-      </AuthProvider>
+      <Routes>
+        <Route path="/share/:token" element={<ShareView />} />
+        <Route path="*" element={
+          <AuthProvider>
+            <AppShell />
+          </AuthProvider>
+        } />
+      </Routes>
     </BrowserRouter>
   );
 }

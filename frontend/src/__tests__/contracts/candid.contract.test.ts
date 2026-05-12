@@ -47,6 +47,7 @@ describe("members IDL factory", () => {
   test("exposes all expected methods", () => {
     const expected = [
       "assignRole",
+      "createShareLink",
       "deactivateMember",
       "generateInviteCode",
       "getActiveMembers",
@@ -56,10 +57,17 @@ describe("members IDL factory", () => {
       "getMember",
       "getMemberByUnit",
       "getMyProfile",
+      "getMyShareLinks",
+      "getShareLink",
+      "getShareLinkViews",
       "initAdmin",
       "isBoardMember",
+      "metrics",
       "registerMember",
+      "resendWelcomePacket",
       "revokeInviteCode",
+      "revokeShareLink",
+      "setAnnouncementsCanisterId",
       "setCommunityProfile",
     ];
     expect([...methods.keys()].sort()).toEqual(expected);
@@ -117,11 +125,13 @@ describe("governance IDL factory", () => {
       "getOpenProposals",
       "getPoll",
       "getProposal",
+      "getWelcomePacketConfig",
       "hasVoted",
       "nominateOwner",
       "nominateSelf",
       "openProposal",
       "setMembersCanisterId",
+      "setWelcomePacketConfig",
     ];
     expect([...methods.keys()].sort()).toEqual(expected);
   });

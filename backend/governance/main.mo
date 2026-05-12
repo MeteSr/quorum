@@ -143,11 +143,22 @@ persistent actor Governance {
     certifiedAt   : Time.Time;
   };
 
+  // ─── Welcome Packet Config (#40) ──────────────────────────────────────────────
+
+  public type WelcomePacketConfig = {
+    pinnedDocIds:  [Text];  // document IDs to surface in welcome email
+    contactCard:   Text;    // free-text: mgmt company, emergency line, board president
+    amenityNotes:  Text;    // free-text: pool hours, gym code, etc.
+    customMessage: Text;    // optional rich-text from the board
+    updatedAt:     Time.Time;
+  };
+
   // ─── Stable State ─────────────────────────────────────────────────────────────
 
-  private var proposalCounter : Nat = 0;
-  private var pollCounter     : Nat = 0;
-  private var membersCanisterId : Text = "";
+  private var proposalCounter    : Nat                   = 0;
+  private var pollCounter        : Nat                   = 0;
+  private var membersCanisterId  : Text                  = "";
+  private var welcomePacketConfig: ?WelcomePacketConfig  = null;
   private let proposals  = Map.empty<Text, Proposal>();
   private let votes      = Map.empty<Text, Vote>();      // key: proposalId # "_" # principalText
   private let polls      = Map.empty<Text, Poll>();
@@ -210,6 +221,27 @@ persistent actor Governance {
 
   public shared func setMembersCanisterId(id : Text) : async () {
     membersCanisterId := id;
+  };
+
+  // ─── Welcome Packet Config (#40) ──────────────────────────────────────────────
+
+  public shared func setWelcomePacketConfig(
+    pinnedDocIds:  [Text],
+    contactCard:   Text,
+    amenityNotes:  Text,
+    customMessage: Text
+  ) : async () {
+    welcomePacketConfig := ?{
+      pinnedDocIds;
+      contactCard;
+      amenityNotes;
+      customMessage;
+      updatedAt = Time.now();
+    };
+  };
+
+  public query func getWelcomePacketConfig() : async ?WelcomePacketConfig {
+    welcomePacketConfig
   };
 
   // ─── Proposals ───────────────────────────────────────────────────────────────
