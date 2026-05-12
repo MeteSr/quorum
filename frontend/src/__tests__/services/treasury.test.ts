@@ -24,6 +24,7 @@ import {
   getReminderPolicy,
   setLateFeePolicy,
   setReminderPolicy,
+  setEmailConfig,
   getAgingReport,
   getReserveFundReport,
   getBudgetVsActual,
@@ -150,6 +151,7 @@ function makeMockActor(overrides: Record<string, any> = {}) {
     getReminderPolicy:         vi.fn().mockResolvedValue([{ preDueDays: [BigInt(7), BigInt(3), BigInt(1)], postDueDays: [BigInt(1), BigInt(7), BigInt(14)] }]),
     setLateFeePolicy:          vi.fn().mockResolvedValue(undefined),
     setReminderPolicy:         vi.fn().mockResolvedValue(undefined),
+    setEmailConfig:            vi.fn().mockResolvedValue(undefined),
     getAgingReport:            vi.fn().mockResolvedValue(MOCK_AGING_REPORT),
     getReserveFundReport:      vi.fn().mockResolvedValue(MOCK_RESERVE_REPORT),
     getBudgetVsActual:         vi.fn().mockResolvedValue(MOCK_BUDGET_VS_ACTUAL),
@@ -519,5 +521,22 @@ describe("treasury service — collections workflow (#28)", () => {
     const result = await resolveCollection("12A", "Paid in full");
     expect(result).toHaveProperty("ok");
     expect((result as any).ok).toBeNull();
+  });
+});
+
+describe("treasury service — email config (#32)", () => {
+  beforeEach(() => vi.mocked(Actor.createActor).mockReturnValue(makeMockActor() as any));
+
+  it("setEmailConfig calls actor with config object", async () => {
+    const spy = vi.fn().mockResolvedValue(undefined);
+    vi.mocked(Actor.createActor).mockReturnValue(makeMockActor({ setEmailConfig: spy }) as any);
+    const cfg = { resendApiKey: "re_test_key", fromEmail: "hoa@example.com", fromName: "Quorum HOA" };
+    await setEmailConfig(cfg);
+    expect(spy).toHaveBeenCalledWith(cfg);
+  });
+
+  it("setEmailConfig returns undefined without throwing", async () => {
+    const result = await setEmailConfig({ resendApiKey: "re_k", fromEmail: "a@b.com", fromName: "HOA" });
+    expect(result).toBeUndefined();
   });
 });

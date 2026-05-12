@@ -19,6 +19,9 @@ import {
   broadcastEmergency,
   getBroadcasts,
   getRecentBroadcasts,
+  setEmailConfig,
+  setMembersCanisterId,
+  sendBulkEmail,
 } from "@/services/announcements";
 
 const MOCK_NOTICE: any = {
@@ -47,16 +50,21 @@ const MOCK_BROADCAST: any = {
   sentAt:   BigInt(1_700_000_000_000_000_000),
 };
 
+const MOCK_BULK_RESULT = { sentCount: BigInt(5), failedCount: BigInt(0) };
+
 function makeMockActor(overrides: Record<string, any> = {}) {
   return {
-    getActive:           vi.fn().mockResolvedValue([MOCK_NOTICE]),
-    getUrgent:           vi.fn().mockResolvedValue([MOCK_URGENT]),
-    getAll:              vi.fn().mockResolvedValue([MOCK_NOTICE, MOCK_URGENT]),
-    post:                vi.fn().mockResolvedValue({ ok: MOCK_NOTICE }),
-    delete:              vi.fn().mockResolvedValue({ ok: null }),
-    broadcastEmergency:  vi.fn().mockResolvedValue({ ok: MOCK_BROADCAST }),
-    getBroadcasts:       vi.fn().mockResolvedValue([MOCK_BROADCAST]),
-    getRecentBroadcasts: vi.fn().mockResolvedValue([MOCK_BROADCAST]),
+    getActive:            vi.fn().mockResolvedValue([MOCK_NOTICE]),
+    getUrgent:            vi.fn().mockResolvedValue([MOCK_URGENT]),
+    getAll:               vi.fn().mockResolvedValue([MOCK_NOTICE, MOCK_URGENT]),
+    post:                 vi.fn().mockResolvedValue({ ok: MOCK_NOTICE }),
+    delete:               vi.fn().mockResolvedValue({ ok: null }),
+    broadcastEmergency:   vi.fn().mockResolvedValue({ ok: MOCK_BROADCAST }),
+    getBroadcasts:        vi.fn().mockResolvedValue([MOCK_BROADCAST]),
+    getRecentBroadcasts:  vi.fn().mockResolvedValue([MOCK_BROADCAST]),
+    setEmailConfig:       vi.fn().mockResolvedValue(undefined),
+    setMembersCanisterId: vi.fn().mockResolvedValue(undefined),
+    sendBulkEmail:        vi.fn().mockResolvedValue({ ok: MOCK_BULK_RESULT }),
     ...overrides,
   };
 }
@@ -180,5 +188,54 @@ describe("announcements service — getRecentBroadcasts", () => {
     vi.mocked(Actor.createActor).mockReturnValue(actor as any);
     await getRecentBroadcasts(7);
     expect(actor.getRecentBroadcasts).toHaveBeenCalledWith(BigInt(7));
+  });
+});
+
+describe("announcements service — bulk email (#14)", () => {
+  beforeEach(() => vi.mocked(Actor.createActor).mockReturnValue(makeMockActor() as any));
+
+  it("setEmailConfig calls actor with config object", async () => {
+    const spy = vi.fn().mockResolvedValue(undefined);
+    vi.mocked(Actor.createActor).mockReturnValue(makeMockActor({ setEmailConfig: spy }) as any);
+    const cfg = { resendApiKey: "re_test_key", fromEmail: "hoa@example.com", fromName: "Quorum HOA" };
+    await setEmailConfig(cfg);
+    expect(spy).toHaveBeenCalledWith(cfg);
+  });
+
+  it("setMembersCanisterId calls actor with canister ID string", async () => {
+    const spy = vi.fn().mockResolvedValue(undefined);
+    vi.mocked(Actor.createActor).mockReturnValue(makeMockActor({ setMembersCanisterId: spy }) as any);
+    await setMembersCanisterId("aaaaa-aa");
+    expect(spy).toHaveBeenCalledWith("aaaaa-aa");
+  });
+
+  it("sendBulkEmail returns ok with sentCount for #All segment", async () => {
+    const result = await sendBulkEmail("May Dues", "Please pay your dues.", { All: null });
+    expect(result).toHaveProperty("ok");
+    expect((result as any).ok.sentCount).toBe(BigInt(5));
+    expect((result as any).ok.failedCount).toBe(BigInt(0));
+  });
+
+  it("sendBulkEmail passes subject, body, and segment to actor", async () => {
+    const spy = vi.fn().mockResolvedValue({ ok: MOCK_BULK_RESULT });
+    vi.mocked(Actor.createActor).mockReturnValue(makeMockActor({ sendBulkEmail: spy }) as any);
+    await sendBulkEmail("Alert", "Body text", { ByRole: "BoardMember" });
+    expect(spy).toHaveBeenCalledWith("Alert", "Body text", { ByRole: "BoardMember" });
+  });
+
+  it("sendBulkEmail accepts UnitIds segment variant", async () => {
+    const spy = vi.fn().mockResolvedValue({ ok: MOCK_BULK_RESULT });
+    vi.mocked(Actor.createActor).mockReturnValue(makeMockActor({ sendBulkEmail: spy }) as any);
+    await sendBulkEmail("Delinquent Notice", "Pay now", { UnitIds: ["12A", "7B"] });
+    expect(spy).toHaveBeenCalledWith("Delinquent Notice", "Pay now", { UnitIds: ["12A", "7B"] });
+  });
+
+  it("sendBulkEmail returns err when canister not deployed", async () => {
+    (process.env as any).CANISTER_ID_ANNOUNCEMENTS = "";
+    vi.resetModules();
+    const { sendBulkEmail: fn } = await import("@/services/announcements");
+    const result = await fn("subj", "body", { All: null });
+    expect(result).toHaveProperty("err");
+    (process.env as any).CANISTER_ID_ANNOUNCEMENTS = "rdmx6-jaaaa-aaaah-test-cai";
   });
 });

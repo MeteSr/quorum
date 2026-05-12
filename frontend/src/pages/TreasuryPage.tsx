@@ -3,12 +3,12 @@ import jsPDF from "jspdf";
 import {
   getAssessmentsForUnit, getTotalOutstandingCents, waiveAssessment, waiveLateFee,
   createDuesCheckoutSession, verifyDuesSession,
-  getLateFeePolicy, getReminderPolicy, setLateFeePolicy, setReminderPolicy,
+  getLateFeePolicy, getReminderPolicy, setLateFeePolicy, setReminderPolicy, setEmailConfig,
   getPaymentHistory, getReminderLog,
   getAgingReport, getReserveFundReport, getBudgetVsActual, getIncomeStatement, getAnnualStatement,
   setReserveFundBalance, setBudgetLine,
   getDelinquentUnits, getCollectionHistory, openCollectionCase, escalateCollection, resolveCollection,
-  type Assessment, type LateFeePolicy, type ReminderPolicy, type DuesPayment, type ReminderLog,
+  type Assessment, type LateFeePolicy, type ReminderPolicy, type EmailConfig, type DuesPayment, type ReminderLog,
   type AgingReport, type ReserveFundReport, type BudgetVsActual, type IncomeStatement, type AnnualStatement,
   type DelinquencyRecord, type CollectionEvent, type CollectionStage,
 } from "@/services/treasury";
@@ -121,6 +121,13 @@ function PolicyPanel() {
   const [preDays,    setPreDays   ] = useState("7,3,1");
   const [postDays,   setPostDays  ] = useState("1,7,14");
 
+  // Email config (#32)
+  const [resendApiKey,    setResendApiKey   ] = useState("");
+  const [fromEmail,       setFromEmail      ] = useState("");
+  const [fromName,        setFromName       ] = useState("");
+  const [savingEmail,     setSavingEmail    ] = useState(false);
+  const [savedEmail,      setSavedEmail     ] = useState(false);
+
   useEffect(() => {
     Promise.all([getLateFeePolicy(), getReminderPolicy()]).then(([lf, rp]) => {
       if (lf) {
@@ -160,6 +167,17 @@ function PolicyPanel() {
     setSaving(false);
     setSaved(true);
     setTimeout(() => setSaved(false), 3000);
+  }
+
+  async function handleSaveEmail() {
+    if (!resendApiKey || !fromEmail || !fromName) return;
+    setSavingEmail(true);
+    setSavedEmail(false);
+    const cfg: EmailConfig = { resendApiKey, fromEmail, fromName };
+    await setEmailConfig(cfg);
+    setSavingEmail(false);
+    setSavedEmail(true);
+    setTimeout(() => setSavedEmail(false), 3000);
   }
 
   const fieldStyle: React.CSSProperties = {
@@ -228,6 +246,43 @@ function PolicyPanel() {
           )}
         </div>
       )}
+
+      {/* Email Config (#32) */}
+      <div style={{ marginTop: "2rem", borderTop: `1px solid ${S.rule}`, paddingTop: "1.5rem" }}>
+        <div style={{ fontFamily: S.mono, fontSize: "0.62rem", letterSpacing: "0.1em", color: S.inkLight, textTransform: "uppercase", marginBottom: "1rem" }}>
+          Email Delivery (Resend)
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "1rem", marginBottom: "1rem" }}>
+          <div>
+            <label style={labelStyle}>Resend API Key</label>
+            <input value={resendApiKey} onChange={(e) => setResendApiKey(e.target.value)} style={fieldStyle} type="password" placeholder="re_…" />
+          </div>
+          <div>
+            <label style={labelStyle}>From Email</label>
+            <input value={fromEmail} onChange={(e) => setFromEmail(e.target.value)} style={fieldStyle} type="email" placeholder="hoa@example.com" />
+          </div>
+          <div>
+            <label style={labelStyle}>From Name</label>
+            <input value={fromName} onChange={(e) => setFromName(e.target.value)} style={fieldStyle} placeholder="Quorum HOA" />
+          </div>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: "1rem" }}>
+          <button
+            onClick={handleSaveEmail}
+            disabled={savingEmail || !resendApiKey || !fromEmail || !fromName}
+            style={{
+              background: S.navy, color: "#fff", border: "none",
+              fontFamily: S.mono, fontSize: "0.6rem", letterSpacing: "0.1em",
+              textTransform: "uppercase", padding: "0.45rem 1.25rem",
+              cursor: (savingEmail || !resendApiKey || !fromEmail || !fromName) ? "default" : "pointer",
+              opacity: (savingEmail || !resendApiKey || !fromEmail || !fromName) ? 0.6 : 1,
+            }}
+          >
+            {savingEmail ? "Saving…" : "Save Email Config"}
+          </button>
+          {savedEmail && <span style={{ fontFamily: S.mono, fontSize: "0.6rem", color: S.sage }}>Saved</span>}
+        </div>
+      </div>
     </div>
   );
 }

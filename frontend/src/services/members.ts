@@ -68,6 +68,7 @@ export function idlFactory({ IDL }: { IDL: any }) {
     assignRole:          IDL.Func([IDL.Principal, Role],                     [ResultUnit],                    []),
     deactivateMember:    IDL.Func([IDL.Principal],                           [ResultUnit],                    []),
     getMember:           IDL.Func([IDL.Principal],                           [IDL.Opt(Member)],               ["query"]),
+    getMemberByUnit:     IDL.Func([IDL.Text],                                [IDL.Opt(Member)],               ["query"]),
     getAllMembers:        IDL.Func([],                                        [IDL.Vec(Member)],               ["query"]),
     getActiveMembers:    IDL.Func([],                                        [IDL.Vec(Member)],               ["query"]),
     getMyProfile:        IDL.Func([],                                        [IDL.Opt(Member)],               ["query"]),
@@ -170,4 +171,11 @@ export async function generateInviteCode(
   const actor = await createActor() as any;
   if (!actor) return { err: { NotFound: null } };
   return actor.generateInviteCode(code, maxUses, expiresAt);
+}
+
+export async function getMemberByUnit(unitId: string): Promise<Member | null> {
+  const actor = await createActor() as any;
+  if (!actor) return null;
+  const result = await actor.getMemberByUnit(unitId) as [] | [Member];
+  return result[0] ?? null;
 }

@@ -2,7 +2,8 @@ import { useEffect, useState } from "react";
 import {
   getAll, post, deleteAnnouncement,
   broadcastEmergency, getBroadcasts,
-  type Announcement, type Priority, type Broadcast, type Severity,
+  sendBulkEmail, setEmailConfig, setMembersCanisterId,
+  type Announcement, type Priority, type Broadcast, type Severity, type EmailSegment, type BulkEmailResult,
 } from "@/services/announcements";
 
 const styles = {
@@ -34,7 +35,7 @@ export default function AnnouncementsPage() {
   const [notices,      setNotices]      = useState<Announcement[]>([]);
   const [broadcasts,   setBroadcasts]   = useState<Broadcast[]>([]);
   const [loading,      setLoading]      = useState(true);
-  const [tab,          setTab]          = useState<"announcements" | "broadcasts">("announcements");
+  const [tab,          setTab]          = useState<"announcements" | "broadcasts" | "bulkemail">("announcements");
 
   // Announcement form
   const [showPost,     setShowPost]     = useState(false);
@@ -52,6 +53,16 @@ export default function AnnouncementsPage() {
   const [bPosting,      setBPosting]      = useState(false);
   const [bError,        setBError]        = useState<string | null>(null);
   const [confirmEmerg,  setConfirmEmerg]  = useState(false);
+
+  // Bulk email form (#14)
+  const [bulkSubject,   setBulkSubject]   = useState("");
+  const [bulkBody,      setBulkBody]      = useState("");
+  const [bulkSegment,   setBulkSegment]   = useState<"All" | "ByRole" | "UnitIds">("All");
+  const [bulkRole,      setBulkRole]      = useState("Homeowner");
+  const [bulkUnitIds,   setBulkUnitIds]   = useState("");
+  const [bulkSending,   setBulkSending]   = useState(false);
+  const [bulkResult,    setBulkResult]    = useState<BulkEmailResult | null>(null);
+  const [bulkError,     setBulkError]     = useState<string | null>(null);
 
   useEffect(() => {
     Promise.all([getAll(), getBroadcasts()])
@@ -113,6 +124,35 @@ export default function AnnouncementsPage() {
     }
   }
 
+  async function handleBulkEmail(e: React.FormEvent) {
+    e.preventDefault();
+    setBulkSending(true);
+    setBulkError(null);
+    setBulkResult(null);
+    let segment: EmailSegment;
+    if (bulkSegment === "ByRole") {
+      segment = { ByRole: bulkRole };
+    } else if (bulkSegment === "UnitIds") {
+      segment = { UnitIds: bulkUnitIds.split(",").map((s) => s.trim()).filter(Boolean) };
+    } else {
+      segment = { All: null };
+    }
+    try {
+      const result = await sendBulkEmail(bulkSubject, bulkBody, segment);
+      if ("ok" in result) {
+        setBulkResult(result.ok);
+        setBulkSubject(""); setBulkBody("");
+      } else {
+        const err = result.err;
+        setBulkError("NotAuthorized" in err ? "Board members only." : "InvalidInput" in err ? (err as any).InvalidInput : "Send failed.");
+      }
+    } catch {
+      setBulkError("Send failed.");
+    } finally {
+      setBulkSending(false);
+    }
+  }
+
   const inputStyle: React.CSSProperties = {
     width: "100%", padding: "0.5rem 0.75rem",
     border: `1px solid ${styles.rule}`, fontFamily: styles.sans,
@@ -155,7 +195,7 @@ export default function AnnouncementsPage() {
 
       {/* Tabs */}
       <div style={{ display: "flex", gap: 0, borderBottom: `1px solid ${styles.rule}`, marginBottom: "1.5rem" }}>
-        {(["announcements", "broadcasts"] as const).map((t) => (
+        {(["announcements", "broadcasts", "bulkemail"] as const).map((t) => (
           <button
             key={t}
             onClick={() => setTab(t)}
@@ -166,7 +206,7 @@ export default function AnnouncementsPage() {
               color: tab === t ? styles.navy : styles.inkLight, cursor: "pointer",
             }}
           >
-            {t === "announcements" ? "Notices" : "Broadcasts"}
+            {t === "announcements" ? "Notices" : t === "broadcasts" ? "Broadcasts" : "Bulk Email"}
             {t === "broadcasts" && broadcasts.length > 0 && (
               <span style={{ marginLeft: "0.4rem", background: styles.rust, color: "#fff", fontFamily: styles.mono, fontSize: "0.5rem", padding: "0.1rem 0.35rem" }}>
                 {broadcasts.length}
@@ -294,6 +334,59 @@ export default function AnnouncementsPage() {
             })}
           </div>
         </>
+      )}
+
+      {/* Bulk email (#14) */}
+      {tab === "bulkemail" && (
+        <form onSubmit={handleBulkEmail} style={{ border: `1px solid ${styles.rule}`, padding: "1.5rem", background: "#fff", display: "flex", flexDirection: "column", gap: "1rem" }}>
+          <div style={{ fontFamily: styles.mono, fontSize: "0.6rem", letterSpacing: "0.1em", color: styles.inkLight, textTransform: "uppercase" }}>
+            Send Email to Members — Board Only
+          </div>
+          <div>
+            <label style={label}>Subject</label>
+            <input style={inputStyle} value={bulkSubject} onChange={(e) => setBulkSubject(e.target.value)} required />
+          </div>
+          <div>
+            <label style={label}>Body</label>
+            <textarea style={{ ...inputStyle, minHeight: 100, resize: "vertical" }} value={bulkBody} onChange={(e) => setBulkBody(e.target.value)} required />
+          </div>
+          <div>
+            <label style={label}>Recipients</label>
+            <select style={{ ...inputStyle, background: "#fff" }} value={bulkSegment} onChange={(e) => setBulkSegment(e.target.value as any)}>
+              <option value="All">All active members</option>
+              <option value="ByRole">By role</option>
+              <option value="UnitIds">Specific units</option>
+            </select>
+          </div>
+          {bulkSegment === "ByRole" && (
+            <div>
+              <label style={label}>Role</label>
+              <select style={{ ...inputStyle, background: "#fff" }} value={bulkRole} onChange={(e) => setBulkRole(e.target.value)}>
+                <option value="Homeowner">Homeowner</option>
+                <option value="BoardMember">Board Member</option>
+                <option value="BoardPresident">Board President</option>
+                <option value="Treasurer">Treasurer</option>
+                <option value="Secretary">Secretary</option>
+                <option value="PropertyManager">Property Manager</option>
+              </select>
+            </div>
+          )}
+          {bulkSegment === "UnitIds" && (
+            <div>
+              <label style={label}>Unit IDs (comma-separated)</label>
+              <input style={inputStyle} value={bulkUnitIds} onChange={(e) => setBulkUnitIds(e.target.value)} placeholder="1A, 2B, 3C" />
+            </div>
+          )}
+          {bulkError && <p style={{ fontFamily: styles.sans, fontSize: "0.8rem", color: styles.rust, margin: 0 }}>{bulkError}</p>}
+          {bulkResult && (
+            <div style={{ fontFamily: styles.mono, fontSize: "0.65rem", color: styles.sage }}>
+              Sent {bulkResult.sentCount.toString()} · Failed {bulkResult.failedCount.toString()}
+            </div>
+          )}
+          <button type="submit" disabled={bulkSending} style={{ padding: "0.75rem", background: styles.navy, color: "#fff", border: "none", fontFamily: styles.mono, fontSize: "0.65rem", letterSpacing: "0.1em", textTransform: "uppercase", cursor: "pointer" }}>
+            {bulkSending ? "Sending…" : "Send Email"}
+          </button>
+        </form>
       )}
     </div>
   );
