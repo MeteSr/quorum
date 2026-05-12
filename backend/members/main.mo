@@ -80,6 +80,32 @@ persistent actor Members {
     viewedAt: Time.Time;
   };
 
+  public type PageBlock = {
+    #Text:             Text;   // plain-text or markdown content
+    #Image:            Text;   // SHA-256 hash stored in photo canister
+    #AnnouncementFeed;         // renders live public announcements
+    #ContactForm;              // shows board contact form
+  };
+
+  public type WebsiteConfig = {
+    slug:        ?Text;
+    customDomain: ?Text;
+    accentColor:  Text;        // hex, e.g. "#1B2D4F"
+    pageBlocks:  [PageBlock];
+  };
+
+  public type PublicProfile = {
+    name:        Text;
+    address:     Text;
+    totalUnits:  Nat;
+    description: Text;
+    accentColor: Text;
+    pageBlocks:  [PageBlock];
+    memberCount: Nat;
+    slug:        ?Text;
+    customDomain: ?Text;
+  };
+
   public type Error = {
     #NotFound;
     #NotAuthorized;
@@ -92,6 +118,7 @@ persistent actor Members {
 
   private var adminPrincipal          : ?Principal        = null;
   private var communityProfile        : ?CommunityProfile = null;
+  private var websiteConfig           : ?WebsiteConfig    = null;
   private var shareLinkCounter        : Nat               = 0;
   private var shareViewCounter        : Nat               = 0;
   private var announcementsCanisterId : Text              = "";
@@ -172,6 +199,88 @@ persistent actor Members {
 
   public query func getCommunityProfile() : async ?CommunityProfile {
     communityProfile
+  };
+
+  // ─── Website Config (#24) ─────────────────────────────────────────────────────
+
+  public shared(msg) func setCommunitySlug(slug : Text) : async Result.Result<WebsiteConfig, Error> {
+    if (not isAdmin(msg.caller) and not isBoard(msg.caller)) return #err(#NotAuthorized);
+    if (Text.size(slug) < 3 or Text.size(slug) > 40) return #err(#InvalidInput("slug must be 3-40 characters"));
+    // Allow only lowercase alphanumeric and hyphens.
+    for (c in slug.chars()) {
+      let ok = (c >= 'a' and c <= 'z') or (c >= '0' and c <= '9') or c == '-';
+      if (not ok) return #err(#InvalidInput("slug may only contain a-z, 0-9, and hyphens"));
+    };
+    let cfg : WebsiteConfig = switch (websiteConfig) {
+      case (?existing) { { existing with slug = ?slug } };
+      case null        { { slug = ?slug; customDomain = null; accentColor = "#1B2D4F"; pageBlocks = [] } };
+    };
+    websiteConfig := ?cfg;
+    #ok(cfg)
+  };
+
+  public shared(msg) func setCustomDomain(domain : Text) : async Result.Result<WebsiteConfig, Error> {
+    if (not isAdmin(msg.caller) and not isBoard(msg.caller)) return #err(#NotAuthorized);
+    if (Text.size(domain) == 0) return #err(#InvalidInput("domain required"));
+    let cfg : WebsiteConfig = switch (websiteConfig) {
+      case (?existing) { { existing with customDomain = ?domain } };
+      case null        { { slug = null; customDomain = ?domain; accentColor = "#1B2D4F"; pageBlocks = [] } };
+    };
+    websiteConfig := ?cfg;
+    #ok(cfg)
+  };
+
+  public shared(msg) func setAccentColor(color : Text) : async Result.Result<WebsiteConfig, Error> {
+    if (not isAdmin(msg.caller) and not isBoard(msg.caller)) return #err(#NotAuthorized);
+    if (Text.size(color) == 0) return #err(#InvalidInput("color required"));
+    let cfg : WebsiteConfig = switch (websiteConfig) {
+      case (?existing) { { existing with accentColor = color } };
+      case null        { { slug = null; customDomain = null; accentColor = color; pageBlocks = [] } };
+    };
+    websiteConfig := ?cfg;
+    #ok(cfg)
+  };
+
+  public shared(msg) func setPageBlocks(blocks : [PageBlock]) : async Result.Result<WebsiteConfig, Error> {
+    if (not isAdmin(msg.caller) and not isBoard(msg.caller)) return #err(#NotAuthorized);
+    let cfg : WebsiteConfig = switch (websiteConfig) {
+      case (?existing) { { existing with pageBlocks = blocks } };
+      case null        { { slug = null; customDomain = null; accentColor = "#1B2D4F"; pageBlocks = blocks } };
+    };
+    websiteConfig := ?cfg;
+    #ok(cfg)
+  };
+
+  public query(msg) func getWebsiteConfig() : async Result.Result<WebsiteConfig, Error> {
+    if (not isAdmin(msg.caller) and not isBoard(msg.caller)) return #err(#NotAuthorized);
+    switch (websiteConfig) {
+      case (?cfg) { #ok(cfg) };
+      case null   { #ok({ slug = null; customDomain = null; accentColor = "#1B2D4F"; pageBlocks = [] }) };
+    }
+  };
+
+  // Public — no auth required. Used by the public community portal.
+  public query func getPublicProfile() : async ?PublicProfile {
+    switch (communityProfile) {
+      case null { null };
+      case (?p) {
+        let cfg = switch (websiteConfig) {
+          case (?c) { c };
+          case null { { slug = null; customDomain = null; accentColor = "#1B2D4F"; pageBlocks = [] } };
+        };
+        ?{
+          name        = p.name;
+          address     = p.address;
+          totalUnits  = p.totalUnits;
+          description = p.description;
+          accentColor = cfg.accentColor;
+          pageBlocks  = cfg.pageBlocks;
+          memberCount = Map.size(members);
+          slug        = cfg.slug;
+          customDomain = cfg.customDomain;
+        }
+      };
+    }
   };
 
   // ─── Invite Codes ─────────────────────────────────────────────────────────────

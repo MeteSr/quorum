@@ -18,14 +18,20 @@ export function idlFactory({ IDL }: { IDL: any }) {
     Emergency: IDL.Null,
   });
 
+  const Visibility = IDL.Variant({
+    Public:  IDL.Null,
+    Members: IDL.Null,
+  });
+
   const Announcement = IDL.Record({
-    id:        IDL.Text,
-    title:     IDL.Text,
-    body:      IDL.Text,
-    priority:  Priority,
-    postedBy:  IDL.Principal,
-    postedAt:  IDL.Int,
-    expiresAt: IDL.Opt(IDL.Int),
+    id:         IDL.Text,
+    title:      IDL.Text,
+    body:       IDL.Text,
+    priority:   Priority,
+    visibility: Visibility,
+    postedBy:   IDL.Principal,
+    postedAt:   IDL.Int,
+    expiresAt:  IDL.Opt(IDL.Int),
   });
 
   const Broadcast = IDL.Record({
@@ -74,7 +80,8 @@ export function idlFactory({ IDL }: { IDL: any }) {
     setEmailConfig:       IDL.Func([EmailConfig],                                     [],                       []),
     setMembersCanisterId: IDL.Func([IDL.Text],                                        [],                       []),
     // announcements
-    post:                 IDL.Func([IDL.Text, IDL.Text, Priority, IDL.Opt(IDL.Int)], [ResultAnnouncement],      []),
+    post:                 IDL.Func([IDL.Text, IDL.Text, Priority, Visibility, IDL.Opt(IDL.Int)], [ResultAnnouncement], []),
+    getPublicAnnouncements: IDL.Func([],                                             [IDL.Vec(Announcement)],   ["query"]),
     delete:               IDL.Func([IDL.Text],                                        [ResultUnit],              []),
     getAnnouncement:      IDL.Func([IDL.Text],                                        [IDL.Opt(Announcement)],   ["query"]),
     getActive:            IDL.Func([],                                                [IDL.Vec(Announcement)],   ["query"]),
@@ -93,17 +100,19 @@ export function idlFactory({ IDL }: { IDL: any }) {
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-export type Priority = { Normal: null } | { Urgent: null };
-export type Severity = { Info: null } | { Warning: null } | { Emergency: null };
+export type Priority   = { Normal: null } | { Urgent: null };
+export type Severity   = { Info: null } | { Warning: null } | { Emergency: null };
+export type Visibility = { Public: null } | { Members: null };
 
 export interface Announcement {
-  id:        string;
-  title:     string;
-  body:      string;
-  priority:  Priority;
-  postedBy:  import("@dfinity/principal").Principal;
-  postedAt:  bigint;
-  expiresAt: [] | [bigint];
+  id:         string;
+  title:      string;
+  body:       string;
+  priority:   Priority;
+  visibility: Visibility;
+  postedBy:   import("@dfinity/principal").Principal;
+  postedAt:   bigint;
+  expiresAt:  [] | [bigint];
 }
 
 export interface Broadcast {
@@ -165,11 +174,17 @@ export async function getAll(): Promise<Announcement[]> {
 }
 
 export async function post(
-  title: string, body: string, priority: Priority, expiresAt: [] | [bigint]
+  title: string, body: string, priority: Priority, visibility: Visibility, expiresAt: [] | [bigint]
 ): Promise<{ ok: Announcement } | { err: AnnouncementsError }> {
   const actor = await createActor() as any;
   if (!actor) return { err: { NotFound: null } };
-  return actor.post(title, body, priority, expiresAt);
+  return actor.post(title, body, priority, visibility, expiresAt);
+}
+
+export async function getPublicAnnouncements(): Promise<Announcement[]> {
+  const actor = await createActor() as any;
+  if (!actor) return [];
+  return actor.getPublicAnnouncements();
 }
 
 export async function deleteAnnouncement(

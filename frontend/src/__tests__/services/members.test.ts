@@ -22,6 +22,12 @@ import {
   revokeShareLink,
   getMyShareLinks,
   resendWelcomePacket,
+  setCommunitySlug,
+  setCustomDomain,
+  setAccentColor,
+  setPageBlocks,
+  getWebsiteConfig,
+  getPublicProfile,
 } from "@/services/members";
 
 const MOCK_COMMUNITY = {
@@ -30,6 +36,25 @@ const MOCK_COMMUNITY = {
   totalUnits: BigInt(120),
   description: "A great community",
   createdAt: BigInt(1_700_000_000_000_000_000),
+};
+
+const MOCK_WEBSITE_CONFIG = {
+  slug:         ["lakewood-heights"],
+  customDomain: [] as [],
+  accentColor:  "#1B2D4F",
+  pageBlocks:   [{ Text: "Welcome to Lakewood Heights." }],
+};
+
+const MOCK_PUBLIC_PROFILE = {
+  name:         "Lakewood Heights HOA",
+  address:      "100 Lakewood Blvd",
+  totalUnits:   BigInt(120),
+  description:  "A great community",
+  accentColor:  "#1B2D4F",
+  pageBlocks:   [{ Text: "Welcome to Lakewood Heights." }],
+  memberCount:  BigInt(45),
+  slug:         ["lakewood-heights"],
+  customDomain: [] as [],
 };
 
 const MOCK_SHARE_LINK = {
@@ -65,6 +90,12 @@ function makeMockActor(overrides: Record<string, any> = {}) {
     revokeShareLink:          vi.fn().mockResolvedValue({ ok: null }),
     getMyShareLinks:          vi.fn().mockResolvedValue({ ok: [MOCK_SHARE_LINK] }),
     resendWelcomePacket:      vi.fn().mockResolvedValue({ ok: null }),
+    setCommunitySlug:         vi.fn().mockResolvedValue({ ok: MOCK_WEBSITE_CONFIG }),
+    setCustomDomain:          vi.fn().mockResolvedValue({ ok: { ...MOCK_WEBSITE_CONFIG, customDomain: ["www.lakewood.com"] } }),
+    setAccentColor:           vi.fn().mockResolvedValue({ ok: { ...MOCK_WEBSITE_CONFIG, accentColor: "#C94C2E" } }),
+    setPageBlocks:            vi.fn().mockResolvedValue({ ok: MOCK_WEBSITE_CONFIG }),
+    getWebsiteConfig:         vi.fn().mockResolvedValue({ ok: MOCK_WEBSITE_CONFIG }),
+    getPublicProfile:         vi.fn().mockResolvedValue([MOCK_PUBLIC_PROFILE]),
     ...overrides,
   };
 }
@@ -203,5 +234,96 @@ describe("members service — resendWelcomePacket", () => {
     );
     const result = await resendWelcomePacket(MOCK_MEMBER.principal);
     expect(result).toHaveProperty("err");
+  });
+});
+
+// ─── Website Config (#24) ─────────────────────────────────────────────────────
+
+describe("members service — setCommunitySlug", () => {
+  beforeEach(() => vi.mocked(Actor.createActor).mockReturnValue(makeMockActor() as any));
+
+  it("returns ok with updated website config", async () => {
+    const result = await setCommunitySlug("lakewood-heights");
+    expect(result).toHaveProperty("ok");
+    expect((result as any).ok.slug).toEqual(["lakewood-heights"]);
+  });
+
+  it("returns err NotAuthorized when not board", async () => {
+    vi.mocked(Actor.createActor).mockReturnValue(
+      makeMockActor({ setCommunitySlug: vi.fn().mockResolvedValue({ err: { NotAuthorized: null } }) }) as any
+    );
+    const result = await setCommunitySlug("bad-slug");
+    expect((result as any).err).toHaveProperty("NotAuthorized");
+  });
+
+  it("returns err InvalidInput for slug with invalid characters", async () => {
+    vi.mocked(Actor.createActor).mockReturnValue(
+      makeMockActor({ setCommunitySlug: vi.fn().mockResolvedValue({ err: { InvalidInput: "slug may only contain a-z, 0-9, and hyphens" } }) }) as any
+    );
+    const result = await setCommunitySlug("Sunset Palms!");
+    expect((result as any).err).toHaveProperty("InvalidInput");
+  });
+});
+
+describe("members service — setCustomDomain", () => {
+  beforeEach(() => vi.mocked(Actor.createActor).mockReturnValue(makeMockActor() as any));
+
+  it("returns ok with updated customDomain", async () => {
+    const result = await setCustomDomain("www.lakewood.com");
+    expect(result).toHaveProperty("ok");
+    expect((result as any).ok.customDomain).toEqual(["www.lakewood.com"]);
+  });
+});
+
+describe("members service — setAccentColor", () => {
+  beforeEach(() => vi.mocked(Actor.createActor).mockReturnValue(makeMockActor() as any));
+
+  it("returns ok with updated accentColor", async () => {
+    const result = await setAccentColor("#C94C2E");
+    expect(result).toHaveProperty("ok");
+    expect((result as any).ok.accentColor).toBe("#C94C2E");
+  });
+});
+
+describe("members service — setPageBlocks", () => {
+  beforeEach(() => vi.mocked(Actor.createActor).mockReturnValue(makeMockActor() as any));
+
+  it("passes page blocks array to actor", async () => {
+    const spy = vi.fn().mockResolvedValue({ ok: MOCK_WEBSITE_CONFIG });
+    vi.mocked(Actor.createActor).mockReturnValue(makeMockActor({ setPageBlocks: spy }) as any);
+    const blocks = [{ Text: "Welcome!" }, { AnnouncementFeed: null }];
+    await setPageBlocks(blocks);
+    expect(spy).toHaveBeenCalledWith(blocks);
+  });
+});
+
+describe("members service — getWebsiteConfig", () => {
+  beforeEach(() => vi.mocked(Actor.createActor).mockReturnValue(makeMockActor() as any));
+
+  it("returns ok with current website config", async () => {
+    const result = await getWebsiteConfig();
+    expect(result).toHaveProperty("ok");
+    expect((result as any).ok.accentColor).toBe("#1B2D4F");
+    expect((result as any).ok.pageBlocks).toHaveLength(1);
+  });
+});
+
+describe("members service — getPublicProfile", () => {
+  beforeEach(() => vi.mocked(Actor.createActor).mockReturnValue(makeMockActor() as any));
+
+  it("returns merged public profile with website config", async () => {
+    const profile = await getPublicProfile();
+    expect(profile).not.toBeNull();
+    expect(profile!.name).toBe("Lakewood Heights HOA");
+    expect(profile!.accentColor).toBe("#1B2D4F");
+    expect(profile!.memberCount).toBe(BigInt(45));
+    expect(profile!.slug).toEqual(["lakewood-heights"]);
+  });
+
+  it("returns null when community profile not configured", async () => {
+    vi.mocked(Actor.createActor).mockReturnValue(
+      makeMockActor({ getPublicProfile: vi.fn().mockResolvedValue([]) }) as any
+    );
+    expect(await getPublicProfile()).toBeNull();
   });
 });

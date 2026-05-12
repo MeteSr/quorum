@@ -34,6 +34,32 @@ export function idlFactory({ IDL }: { IDL: any }) {
     createdAt:   IDL.Int,
   });
 
+  const PageBlock = IDL.Variant({
+    Text:             IDL.Text,
+    Image:            IDL.Text,
+    AnnouncementFeed: IDL.Null,
+    ContactForm:      IDL.Null,
+  });
+
+  const WebsiteConfig = IDL.Record({
+    slug:         IDL.Opt(IDL.Text),
+    customDomain: IDL.Opt(IDL.Text),
+    accentColor:  IDL.Text,
+    pageBlocks:   IDL.Vec(PageBlock),
+  });
+
+  const PublicProfile = IDL.Record({
+    name:         IDL.Text,
+    address:      IDL.Text,
+    totalUnits:   IDL.Nat,
+    description:  IDL.Text,
+    accentColor:  IDL.Text,
+    pageBlocks:   IDL.Vec(PageBlock),
+    memberCount:  IDL.Nat,
+    slug:         IDL.Opt(IDL.Text),
+    customDomain: IDL.Opt(IDL.Text),
+  });
+
   const InviteCode = IDL.Record({
     code:      IDL.Text,
     maxUses:   IDL.Nat,
@@ -69,19 +95,26 @@ export function idlFactory({ IDL }: { IDL: any }) {
     InvalidCode:   IDL.Text,
   });
 
-  const ResultUnit      = IDL.Variant({ ok: IDL.Null,         err: Error });
-  const ResultMember    = IDL.Variant({ ok: Member,           err: Error });
-  const ResultProfile   = IDL.Variant({ ok: CommunityProfile, err: Error });
-  const ResultInvite    = IDL.Variant({ ok: InviteCode,       err: Error });
-  const ResultShareLink = IDL.Variant({ ok: ShareLink,        err: Error });
-  const ResultShareLinks = IDL.Variant({ ok: IDL.Vec(ShareLink), err: Error });
-  const ResultShareViews = IDL.Variant({ ok: IDL.Vec(ShareViewLog), err: Error });
+  const ResultUnit         = IDL.Variant({ ok: IDL.Null,           err: Error });
+  const ResultMember       = IDL.Variant({ ok: Member,             err: Error });
+  const ResultProfile      = IDL.Variant({ ok: CommunityProfile,   err: Error });
+  const ResultInvite       = IDL.Variant({ ok: InviteCode,         err: Error });
+  const ResultShareLink    = IDL.Variant({ ok: ShareLink,          err: Error });
+  const ResultShareLinks   = IDL.Variant({ ok: IDL.Vec(ShareLink), err: Error });
+  const ResultShareViews   = IDL.Variant({ ok: IDL.Vec(ShareViewLog), err: Error });
+  const ResultWebsite      = IDL.Variant({ ok: WebsiteConfig,      err: Error });
 
   return IDL.Service({
     initAdmin:                  IDL.Func([],                                        [ResultUnit],                    []),
     setAnnouncementsCanisterId: IDL.Func([IDL.Text],                                [],                              []),
     setCommunityProfile:        IDL.Func([IDL.Text, IDL.Text, IDL.Nat, IDL.Text],  [ResultProfile],                 []),
     getCommunityProfile:        IDL.Func([],                                        [IDL.Opt(CommunityProfile)],     ["query"]),
+    setCommunitySlug:           IDL.Func([IDL.Text],                                [ResultWebsite],                 []),
+    setCustomDomain:            IDL.Func([IDL.Text],                                [ResultWebsite],                 []),
+    setAccentColor:             IDL.Func([IDL.Text],                                [ResultWebsite],                 []),
+    setPageBlocks:              IDL.Func([IDL.Vec(PageBlock)],                      [ResultWebsite],                 []),
+    getWebsiteConfig:           IDL.Func([],                                        [ResultWebsite],                 ["query"]),
+    getPublicProfile:           IDL.Func([],                                        [IDL.Opt(PublicProfile)],        ["query"]),
     generateInviteCode:         IDL.Func([IDL.Text, IDL.Nat, IDL.Opt(IDL.Int)],    [ResultInvite],                  []),
     revokeInviteCode:           IDL.Func([IDL.Text],                                [ResultUnit],                    []),
     getInviteCode:              IDL.Func([IDL.Text],                                [IDL.Opt(InviteCode)],           ["query"]),
@@ -157,6 +190,31 @@ export interface ShareLink {
 export interface ShareViewLog {
   token:    string;
   viewedAt: bigint;
+}
+
+export type PageBlock =
+  | { Text: string }
+  | { Image: string }
+  | { AnnouncementFeed: null }
+  | { ContactForm: null };
+
+export interface WebsiteConfig {
+  slug:         [] | [string];
+  customDomain: [] | [string];
+  accentColor:  string;
+  pageBlocks:   PageBlock[];
+}
+
+export interface PublicProfile {
+  name:         string;
+  address:      string;
+  totalUnits:   bigint;
+  description:  string;
+  accentColor:  string;
+  pageBlocks:   PageBlock[];
+  memberCount:  bigint;
+  slug:         [] | [string];
+  customDomain: [] | [string];
 }
 
 export type MembersError =
@@ -270,4 +328,51 @@ export async function getShareLinkViews(
   const actor = await createActor() as any;
   if (!actor) return { ok: [] };
   return actor.getShareLinkViews(token);
+}
+
+// ─── Website Config (#24) ─────────────────────────────────────────────────────
+
+export async function setCommunitySlug(
+  slug: string
+): Promise<{ ok: WebsiteConfig } | { err: MembersError }> {
+  const actor = await createActor() as any;
+  if (!actor) return { err: { NotAuthorized: null } };
+  return actor.setCommunitySlug(slug);
+}
+
+export async function setCustomDomain(
+  domain: string
+): Promise<{ ok: WebsiteConfig } | { err: MembersError }> {
+  const actor = await createActor() as any;
+  if (!actor) return { err: { NotAuthorized: null } };
+  return actor.setCustomDomain(domain);
+}
+
+export async function setAccentColor(
+  color: string
+): Promise<{ ok: WebsiteConfig } | { err: MembersError }> {
+  const actor = await createActor() as any;
+  if (!actor) return { err: { NotAuthorized: null } };
+  return actor.setAccentColor(color);
+}
+
+export async function setPageBlocks(
+  blocks: PageBlock[]
+): Promise<{ ok: WebsiteConfig } | { err: MembersError }> {
+  const actor = await createActor() as any;
+  if (!actor) return { err: { NotAuthorized: null } };
+  return actor.setPageBlocks(blocks);
+}
+
+export async function getWebsiteConfig(): Promise<{ ok: WebsiteConfig } | { err: MembersError }> {
+  const actor = await createActor() as any;
+  if (!actor) return { ok: { slug: [], customDomain: [], accentColor: "#1B2D4F", pageBlocks: [] } };
+  return actor.getWebsiteConfig();
+}
+
+export async function getPublicProfile(): Promise<PublicProfile | null> {
+  const actor = await createActor() as any;
+  if (!actor) return null;
+  const result = await actor.getPublicProfile() as [] | [PublicProfile];
+  return result[0] ?? null;
 }

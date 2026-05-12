@@ -58,8 +58,10 @@ describe("members IDL factory", () => {
       "getMemberByUnit",
       "getMyProfile",
       "getMyShareLinks",
+      "getPublicProfile",
       "getShareLink",
       "getShareLinkViews",
+      "getWebsiteConfig",
       "initAdmin",
       "isBoardMember",
       "metrics",
@@ -67,8 +69,12 @@ describe("members IDL factory", () => {
       "resendWelcomePacket",
       "revokeInviteCode",
       "revokeShareLink",
+      "setAccentColor",
       "setAnnouncementsCanisterId",
       "setCommunityProfile",
+      "setCommunitySlug",
+      "setCustomDomain",
+      "setPageBlocks",
     ];
     expect([...methods.keys()].sort()).toEqual(expected);
   });
@@ -91,6 +97,24 @@ describe("members IDL factory", () => {
 
   test("registerMember takes 4 args", () => {
     expect(methods.get("registerMember")!.argTypes).toHaveLength(4);
+  });
+
+  test("getPublicProfile is a query with 0 args", () => {
+    const m = methods.get("getPublicProfile")!;
+    expect(m.isQuery).toBe(true);
+    expect(m.argTypes).toHaveLength(0);
+  });
+
+  test("setCommunitySlug is an update call with 1 arg", () => {
+    const m = methods.get("setCommunitySlug")!;
+    expect(m.isQuery).toBe(false);
+    expect(m.argTypes).toHaveLength(1);
+  });
+
+  test("setPageBlocks is an update call with 1 arg", () => {
+    const m = methods.get("setPageBlocks")!;
+    expect(m.isQuery).toBe(false);
+    expect(m.argTypes).toHaveLength(1);
   });
 });
 
@@ -402,6 +426,7 @@ describe("announcements IDL factory", () => {
       "getAll",
       "getAnnouncement",
       "getBroadcasts",
+      "getPublicAnnouncements",
       "getRecentBroadcasts",
       "getUrgent",
       "post",
@@ -425,8 +450,14 @@ describe("announcements IDL factory", () => {
     expect(methods.get("delete")!.isQuery).toBe(false);
   });
 
-  test("post takes 4 args", () => {
-    expect(methods.get("post")!.argTypes).toHaveLength(4);
+  test("post takes 5 args (title, body, priority, visibility, expiresAt)", () => {
+    expect(methods.get("post")!.argTypes).toHaveLength(5);
+  });
+
+  test("getPublicAnnouncements is a query with 0 args", () => {
+    const m = methods.get("getPublicAnnouncements")!;
+    expect(m.isQuery).toBe(true);
+    expect(m.argTypes).toHaveLength(0);
   });
 
   test("broadcastEmergency is an update call with 3 args", () => {
