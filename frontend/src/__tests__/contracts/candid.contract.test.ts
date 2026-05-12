@@ -93,19 +93,32 @@ describe("governance IDL factory", () => {
 
   test("exposes all expected methods", () => {
     const expected = [
+      "cancelElection",
+      "castBallot",
       "castPollVote",
       "castVote",
+      "certifyResults",
       "closePoll",
+      "createElection",
       "createPoll",
       "createProposal",
       "finalizeProposal",
+      "getActiveElections",
+      "getAllElections",
       "getAllPolls",
       "getAllProposals",
+      "getBallots",
+      "getElection",
+      "getElectionResult",
       "getMyVote",
+      "getNominations",
       "getOpenPolls",
       "getOpenProposals",
       "getPoll",
       "getProposal",
+      "hasVoted",
+      "nominateOwner",
+      "nominateSelf",
       "openProposal",
       "setMembersCanisterId",
     ];
@@ -148,6 +161,61 @@ describe("governance IDL factory", () => {
 
   test("closePoll is an update call", () => {
     expect(methods.get("closePoll")!.isQuery).toBe(false);
+  });
+
+  // Election methods
+  test("createElection is an update call with 8 args", () => {
+    const m = methods.get("createElection")!;
+    expect(m.isQuery).toBe(false);
+    expect(m.argTypes).toHaveLength(8);
+  });
+
+  test("nominateSelf is an update call with 3 args", () => {
+    const m = methods.get("nominateSelf")!;
+    expect(m.isQuery).toBe(false);
+    expect(m.argTypes).toHaveLength(3);
+  });
+
+  test("nominateOwner is an update call with 3 args", () => {
+    const m = methods.get("nominateOwner")!;
+    expect(m.isQuery).toBe(false);
+    expect(m.argTypes).toHaveLength(3);
+  });
+
+  test("castBallot is an update call with 2 args", () => {
+    const m = methods.get("castBallot")!;
+    expect(m.isQuery).toBe(false);
+    expect(m.argTypes).toHaveLength(2);
+  });
+
+  test("certifyResults is an update call with 1 arg", () => {
+    const m = methods.get("certifyResults")!;
+    expect(m.isQuery).toBe(false);
+    expect(m.argTypes).toHaveLength(1);
+  });
+
+  test("getActiveElections is a query with 0 args", () => {
+    const m = methods.get("getActiveElections")!;
+    expect(m.isQuery).toBe(true);
+    expect(m.argTypes).toHaveLength(0);
+  });
+
+  test("getNominations is a query with 1 arg", () => {
+    const m = methods.get("getNominations")!;
+    expect(m.isQuery).toBe(true);
+    expect(m.argTypes).toHaveLength(1);
+  });
+
+  test("getBallots is a query with 1 arg", () => {
+    const m = methods.get("getBallots")!;
+    expect(m.isQuery).toBe(true);
+    expect(m.argTypes).toHaveLength(1);
+  });
+
+  test("hasVoted is a query with 2 args", () => {
+    const m = methods.get("hasVoted")!;
+    expect(m.isQuery).toBe(true);
+    expect(m.argTypes).toHaveLength(2);
   });
 });
 
