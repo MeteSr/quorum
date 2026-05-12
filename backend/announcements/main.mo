@@ -292,7 +292,7 @@ persistent actor Announcements {
     let windowNs = days * 86_400 * 1_000_000_000;
     let cutoffNs : Int = now - windowNs;
     Array.filter<Broadcast>(Iter.toArray(Map.values(broadcasts)), func(b) {
-      b.sentAt >= cutoffNs
+      b.sentAt > cutoffNs
     })
   };
 };
