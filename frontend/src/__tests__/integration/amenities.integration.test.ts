@@ -140,10 +140,11 @@ describe.skipIf(!deployed)("createReservation — capacity + Candid round-trip",
     expect(list.find((r: any) => r.id === reservation.id)).toBeDefined();
   });
 
-  it("rejects over-capacity booking (3 guests into capacity-2 slot with 1 already booked)", async () => {
+  it("rejects over-capacity booking (3 guests in a capacity-2 slot)", async () => {
     const a = await getActor() as any;
+    // Use slot 1 (unbooked) so we hit CapacityExceeded before AlreadyBooked.
     const result = await a.createReservation(
-      amenityId, TEST_DATE, BigInt(0), BigInt(3), "unitB"
+      amenityId, TEST_DATE, BigInt(1), BigInt(3), "unitB"
     ) as any;
     expect("err" in result).toBe(true);
     expect(result.err).toHaveProperty("CapacityExceeded");
