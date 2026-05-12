@@ -145,6 +145,13 @@ describe.skipIf(!deployed)("getBroadcasts + getRecentBroadcasts", () => {
 });
 
 describe.skipIf(!deployed)("sendBulkEmail — segment variants (#14)", () => {
+  beforeAll(async () => {
+    const a = await getActor();
+    const membersId = (process.env as any).CANISTER_ID_MEMBERS || "";
+    await a.setEmailConfig({ resendApiKey: "re_test_key", fromEmail: "test@example.com", fromName: "Integration Test" });
+    if (membersId) await a.setMembersCanisterId(membersId);
+  });
+
   it("sendBulkEmail with #All segment returns ok with sentCount + failedCount", async () => {
     const a = await getActor();
     const result = await a.sendBulkEmail(
