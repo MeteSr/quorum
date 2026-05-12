@@ -3,7 +3,9 @@ import {
   getAllMembers, getMyShareLinks, createShareLink, revokeShareLink,
   resendWelcomePacket, getWebsiteConfig, setCommunitySlug, setCustomDomain,
   setAccentColor, setPageBlocks,
+  getStaffAssignments, assignStaffRole, revokeStaffRole, getApprovalLog,
   type Member, type ShareLink, type ShareScope, type WebsiteConfig, type PageBlock,
+  type Role, type StaffAssignment, type ApprovalLog,
 } from "@/services/members";
 import { getWelcomePacketConfig, setWelcomePacketConfig, type WelcomePacketConfig } from "@/services/governance";
 import { useAuthStore } from "@/store/authStore";
@@ -577,9 +579,177 @@ function WebsiteSettingsPanel() {
   );
 }
 
+// ─── StaffPanel (#16) ─────────────────────────────────────────────────────────
+
+const STAFF_ROLES: { value: string; label: string }[] = [
+  { value: "PropertyManager",       label: "Property Manager" },
+  { value: "AssistantManager",      label: "Assistant Manager" },
+  { value: "MaintenanceSupervisor", label: "Maintenance Supervisor" },
+  { value: "Staff",                 label: "Staff" },
+];
+
+function roleName(role: Role): string {
+  const key = Object.keys(role)[0];
+  const map: Record<string, string> = {
+    Homeowner: "Homeowner", BoardMember: "Board Member",
+    BoardPresident: "Board President", Treasurer: "Treasurer",
+    Secretary: "Secretary", PropertyManager: "Property Manager",
+    AssistantManager: "Assistant Manager",
+    MaintenanceSupervisor: "Maintenance Supervisor", Staff: "Staff",
+  };
+  return map[key] ?? key;
+}
+
+function StaffPanel({ members }: { members: Member[] }) {
+  const [assignments,  setAssignments]  = useState<StaffAssignment[]>([]);
+  const [logs,         setLogs]         = useState<ApprovalLog[]>([]);
+  const [target,       setTarget]       = useState("");
+  const [role,         setRole]         = useState("PropertyManager");
+  const [maxCents,     setMaxCents]     = useState("");
+  const [saving,       setSaving]       = useState(false);
+  const [error,        setError]        = useState<string | null>(null);
+  const [showLog,      setShowLog]      = useState(false);
+
+  useEffect(() => {
+    getStaffAssignments().then(r => { if ("ok" in r) setAssignments(r.ok); });
+    getApprovalLog().then(r => { if ("ok" in r) setLogs(r.ok); });
+  }, []);
+
+  async function handleAssign(e: React.FormEvent) {
+    e.preventDefault();
+    setError(null);
+    if (!target) { setError("Select a member."); return; }
+    setSaving(true);
+    const { Principal } = await import("@dfinity/principal");
+    const p = members.find(m => m.principal.toText() === target);
+    if (!p) { setError("Member not found."); setSaving(false); return; }
+    const cents: [] | [bigint] = maxCents ? [BigInt(Math.round(parseFloat(maxCents) * 100))] : [];
+    const result = await assignStaffRole(p.principal, { [role]: null } as Role, cents);
+    setSaving(false);
+    if ("ok" in result) {
+      setAssignments(prev => {
+        const filtered = prev.filter(a => a.principal.toText() !== target);
+        return [...filtered, result.ok];
+      });
+      setTarget(""); setMaxCents("");
+    } else {
+      setError("NotAuthorized" in (result as any).err ? "Board access required." : "Assignment failed.");
+    }
+  }
+
+  async function handleRevoke(principal: { toText(): string }) {
+    const { Principal } = await import("@dfinity/principal");
+    await revokeStaffRole(Principal.fromText(principal.toText()));
+    setAssignments(prev => prev.filter(a => a.principal.toText() !== principal.toText()));
+  }
+
+  return (
+    <div>
+      <h3 style={{ fontFamily: S.serif, fontSize: "1.25rem", fontWeight: 700, margin: "0 0 0.25rem" }}>
+        Staff Roles
+      </h3>
+      <p style={{ fontFamily: S.sans, fontSize: "0.82rem", color: S.inkLight, marginBottom: "1.5rem" }}>
+        Assign management roles with optional expenditure approval ceilings.
+        Board members always have unlimited approval authority.
+      </p>
+
+      {/* Assign form */}
+      <form onSubmit={handleAssign} style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: "1.5rem" }}>
+        <select
+          value={target} onChange={e => setTarget(e.target.value)}
+          style={{ fontFamily: S.mono, fontSize: "0.75rem", border: `1px solid ${S.rule}`, padding: "0.5rem", background: S.paper }}
+        >
+          <option value="">— select member —</option>
+          {members.filter(m => m.isActive).map(m => (
+            <option key={m.principal.toText()} value={m.principal.toText()}>
+              {m.displayName} ({m.unitId})
+            </option>
+          ))}
+        </select>
+
+        <select
+          value={role} onChange={e => setRole(e.target.value)}
+          style={{ fontFamily: S.mono, fontSize: "0.75rem", border: `1px solid ${S.rule}`, padding: "0.5rem", background: S.paper }}
+        >
+          {STAFF_ROLES.map(r => (
+            <option key={r.value} value={r.value}>{r.label}</option>
+          ))}
+        </select>
+
+        <input
+          type="number" min="0" step="0.01" placeholder="Max approval $"
+          value={maxCents} onChange={e => setMaxCents(e.target.value)}
+          style={{ fontFamily: S.mono, fontSize: "0.75rem", border: `1px solid ${S.rule}`, padding: "0.5rem", width: 130, background: S.paper }}
+        />
+
+        <button
+          type="submit" disabled={saving}
+          style={{ fontFamily: S.mono, fontSize: "0.68rem", letterSpacing: "0.08em", textTransform: "uppercase", background: S.ink, color: S.paper, border: "none", padding: "0.5rem 1rem", cursor: "pointer", opacity: saving ? 0.5 : 1 }}
+        >
+          {saving ? "Saving…" : "Assign Role"}
+        </button>
+      </form>
+
+      {error && <p style={{ fontFamily: S.sans, fontSize: "0.82rem", color: S.rust, marginBottom: "1rem" }}>{error}</p>}
+
+      {/* Current assignments */}
+      {assignments.length > 0 && (
+        <div style={{ marginBottom: "2rem" }}>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 160px 120px 60px", gap: 10, paddingBottom: 8, borderBottom: `1px solid ${S.ink}` }}>
+            {["Member", "Role", "Max Approval", ""].map(h => (
+              <span key={h} style={{ fontFamily: S.mono, fontSize: "0.56rem", textTransform: "uppercase", letterSpacing: "0.08em", color: S.inkLight }}>{h}</span>
+            ))}
+          </div>
+          {assignments.map(a => (
+            <div key={a.principal.toText()} style={{ display: "grid", gridTemplateColumns: "1fr 160px 120px 60px", gap: 10, padding: "10px 0", borderBottom: `1px solid ${S.rule}` }}>
+              <span style={{ fontFamily: S.sans, fontSize: "0.85rem" }}>
+                {members.find(m => m.principal.toText() === a.principal.toText())?.displayName ?? a.principal.toText().slice(0, 10) + "…"}
+              </span>
+              <span style={{ fontFamily: S.mono, fontSize: "0.75rem" }}>{roleName(a.role)}</span>
+              <span style={{ fontFamily: S.mono, fontSize: "0.75rem", color: S.inkLight }}>
+                {a.maxApprovalCents.length ? `$${(Number(a.maxApprovalCents[0]) / 100).toLocaleString()}` : "—"}
+              </span>
+              <button
+                onClick={() => handleRevoke(a.principal)}
+                style={{ fontFamily: S.mono, fontSize: "0.6rem", background: "none", border: "none", color: S.rust, cursor: "pointer", textAlign: "left" }}
+              >
+                Revoke
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Approval audit log */}
+      <button
+        onClick={() => setShowLog(v => !v)}
+        style={{ fontFamily: S.mono, fontSize: "0.62rem", letterSpacing: "0.08em", textTransform: "uppercase", background: "none", border: `1px solid ${S.rule}`, padding: "0.4rem 0.8rem", cursor: "pointer", color: S.inkLight, marginBottom: "1rem" }}
+      >
+        {showLog ? "Hide" : "Show"} Approval Log ({logs.length})
+      </button>
+
+      {showLog && (
+        <div>
+          {logs.length === 0
+            ? <p style={{ fontFamily: S.sans, fontSize: "0.82rem", color: S.inkLight }}>No approval events recorded.</p>
+            : logs.slice().reverse().map(l => (
+                <div key={l.id} style={{ display: "flex", gap: 16, padding: "8px 0", borderBottom: `1px solid ${S.rule}`, fontFamily: S.mono, fontSize: "0.72rem" }}>
+                  <span style={{ color: "Approved" in l.action ? "#2E7D32" : S.rust, minWidth: 70 }}>{"Approved" in l.action ? "APPROVED" : "REJECTED"}</span>
+                  <span style={{ color: S.inkLight }}>{l.requestId}</span>
+                  {l.reason && <span style={{ color: S.inkLight }}>— {l.reason}</span>}
+                  <span style={{ marginLeft: "auto", color: S.inkLight }}>{new Date(Number(l.timestamp / BigInt(1_000_000))).toLocaleDateString()}</span>
+                </div>
+              ))
+          }
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── MembersPage ──────────────────────────────────────────────────────────────
 
-type Tab = "members" | "links" | "packet" | "website";
+type Tab = "members" | "links" | "packet" | "website" | "staff";
 
 export default function MembersPage() {
   const { principal } = useAuthStore();
@@ -606,6 +776,7 @@ export default function MembersPage() {
     { key: "links",   label: "Share Links" },
     { key: "packet",  label: "Welcome Packet" },
     { key: "website", label: "Website" },
+    { key: "staff",   label: "Staff" },
   ];
 
   return (
@@ -683,6 +854,12 @@ export default function MembersPage() {
         isBoard
           ? <WebsiteSettingsPanel />
           : <p style={{ fontFamily: S.sans, fontSize: "0.88rem", color: S.inkLight }}>Website configuration is available to board members only.</p>
+      )}
+
+      {tab === "staff" && (
+        isBoard
+          ? <StaffPanel members={members} />
+          : <p style={{ fontFamily: S.sans, fontSize: "0.88rem", color: S.inkLight }}>Staff management is available to board members only.</p>
       )}
     </div>
   );

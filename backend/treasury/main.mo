@@ -187,6 +187,36 @@ persistent actor Treasury {
     createdBy: Principal;
   };
 
+  // ─── QuickBooks Types (#19) ───────────────────────────────────────────────────
+
+  public type QBOConfig = {
+    realmId:      Text;   // QuickBooks company ID
+    accessToken:  Text;
+    refreshToken: Text;
+    tokenExpiry:  Time.Time;
+  };
+
+  public type QBOSyncStatus = { #Pending; #Synced; #Failed };
+
+  public type QBOSyncEntry = {
+    id:           Text;
+    paymentId:    Text;
+    assessmentId: Text;
+    unitId:       Text;
+    amountCents:  Nat;
+    status:       QBOSyncStatus;
+    qboPaymentId: ?Text;
+    syncedAt:     ?Time.Time;
+    errorMsg:     ?Text;
+    createdAt:    Time.Time;
+  };
+
+  public type QBOStatus = {
+    configured:  Bool;
+    realmId:     Text;
+    tokenExpiry: Time.Time;
+  };
+
   // ─── IC HTTP Outcall interface ────────────────────────────────────────────────
 
   public type HttpHeader   = { name : Text; value : Text };
@@ -239,6 +269,10 @@ persistent actor Treasury {
   private let collectionEvents = Map.empty<Text, CollectionEvent>();  // keyed by event id
   private var collEvtCounter   : Nat = 0;
 
+  private var qboConfig      : ?QBOConfig = null;
+  private let qboSyncLog     = Map.empty<Text, QBOSyncEntry>();
+  private var qboSyncCounter : Nat = 0;
+
   // Resets on upgrade — safe, idempotency keys prevent double-work
   transient var lastScanDayNs : Int = 0;
 
@@ -266,6 +300,11 @@ persistent actor Treasury {
   private func nextEvtId() : Text {
     collEvtCounter += 1;
     "EVT_" # Nat.toText(collEvtCounter)
+  };
+
+  private func nextQboId() : Text {
+    qboSyncCounter += 1;
+    "QBO_" # Nat.toText(qboSyncCounter)
   };
 
   // ─── Stripe helpers ──────────────────────────────────────────────────────────
@@ -301,6 +340,91 @@ persistent actor Treasury {
     result
   };
 
+  // ─── QBO helpers (#19) ───────────────────────────────────────────────────────
+
+  // Formats cents as a decimal dollar string (e.g. 9999 → "99.99").
+  private func centsToDecimal(cents : Nat) : Text {
+    let c = cents % 100;
+    Nat.toText(cents / 100) # "." # (if (c < 10) "0" # Nat.toText(c) else Nat.toText(c))
+  };
+
+  // POST one payment to QBO and update the sync entry in-place.
+  private func sendToQbo(entryId : Text, payment : DuesPayment, cfg : QBOConfig) : async () {
+    let body =
+      "{\"TotalAmt\":" # centsToDecimal(payment.amountCents) #
+      ",\"CustomerRef\":{\"value\":\"" # payment.unitId # "\"}}";
+    try {
+      let response = await (with cycles = 3_000_000_000) ic.http_request({
+        url               = "https://quickbooks.api.intuit.com/v3/company/" # cfg.realmId # "/payment";
+        max_response_bytes = ?Nat64.fromNat(8_192);
+        headers           = [
+          { name = "authorization"; value = "Bearer " # cfg.accessToken },
+          { name = "content-type";  value = "application/json" },
+          { name = "accept";        value = "application/json" },
+        ];
+        body              = ?Text.encodeUtf8(body);
+        method            = #post;
+        transform         = ?{ function = transform; context = Blob.fromArray([]) };
+      });
+      let now = Time.now();
+      switch (Map.get(qboSyncLog, Text.compare, entryId)) {
+        case null {};
+        case (?e) {
+          switch (Text.decodeUtf8(response.body)) {
+            case null {
+              Map.add(qboSyncLog, Text.compare, entryId, {
+                e with status = #Failed; errorMsg = ?"Failed to decode QBO response"; syncedAt = ?now
+              });
+            };
+            case (?json) {
+              if (response.status >= 200 and response.status < 300) {
+                let qboId = switch (jsonExtract(json, "Id")) { case (?v) ?v; case null null };
+                Map.add(qboSyncLog, Text.compare, entryId, {
+                  e with status = #Synced; qboPaymentId = qboId; syncedAt = ?now; errorMsg = null
+                });
+              } else {
+                Map.add(qboSyncLog, Text.compare, entryId, {
+                  e with status = #Failed;
+                  errorMsg = ?("QBO error " # Nat.toText(response.status));
+                  syncedAt = ?now
+                });
+              };
+            };
+          };
+        };
+      };
+    } catch (_e) {
+      switch (Map.get(qboSyncLog, Text.compare, entryId)) {
+        case null {};
+        case (?e) {
+          Map.add(qboSyncLog, Text.compare, entryId, {
+            e with status = #Failed; errorMsg = ?"QBO HTTP request failed"; syncedAt = ?Time.now()
+          });
+        };
+      };
+    };
+  };
+
+  // Create a #Pending sync entry and fire the QBO call.
+  private func doQboSync(payment : DuesPayment) : async () {
+    let cfg = switch (qboConfig) { case null return; case (?c) c };
+    let entryId = nextQboId();
+    let entry : QBOSyncEntry = {
+      id           = entryId;
+      paymentId    = payment.id;
+      assessmentId = payment.assessmentId;
+      unitId       = payment.unitId;
+      amountCents  = payment.amountCents;
+      status       = #Pending;
+      qboPaymentId = null;
+      syncedAt     = null;
+      errorMsg     = null;
+      createdAt    = Time.now();
+    };
+    Map.add(qboSyncLog, Text.compare, entryId, entry);
+    await sendToQbo(entryId, payment, cfg);
+  };
+
   // ─── Wiring ───────────────────────────────────────────────────────────────────
 
   public shared func setMembersCanisterId(id : Text) : async () {
@@ -325,6 +449,17 @@ persistent actor Treasury {
 
   public shared func setReserveFundBalance(balance : Nat) : async () {
     reserveFundBalance := balance;
+  };
+
+  public shared func setQBOConfig(config : QBOConfig) : async () {
+    qboConfig := ?config;
+  };
+
+  public query func getQBOStatus() : async QBOStatus {
+    switch (qboConfig) {
+      case null  { { configured = false; realmId = ""; tokenExpiry = 0 } };
+      case (?c)  { { configured = true;  realmId = c.realmId; tokenExpiry = c.tokenExpiry } };
+    }
   };
 
   public shared func setBudgetLine(year : Nat, category : Text, budgetedCents : Nat) : async () {
@@ -542,6 +677,7 @@ persistent actor Treasury {
 
           let updated = { assessment with status = #Paid; paidAt = ?now };
           Map.add(assessments, Text.compare, assessmentId, updated);
+          try { await doQboSync(payment) } catch (_e) {};
           #ok(updated)
         };
       }
@@ -763,6 +899,36 @@ persistent actor Treasury {
     }
   };
 
+  // Board: retry a failed QBO sync entry.
+  public shared func retrySync(entryId : Text) : async Result.Result<QBOSyncEntry, Error> {
+    let cfg = switch (qboConfig) {
+      case null  { return #err(#InvalidInput("QBO not configured")) };
+      case (?c)  { c };
+    };
+    switch (Map.get(qboSyncLog, Text.compare, entryId)) {
+      case null  { #err(#NotFound) };
+      case (?e)  {
+        switch (e.status) {
+          case (#Synced) { return #err(#InvalidInput("Already synced")) };
+          case _ {};
+        };
+        switch (Map.get(duesPayments, Text.compare, e.paymentId)) {
+          case null  { #err(#InvalidInput("Original payment not found")) };
+          case (?payment) {
+            Map.add(qboSyncLog, Text.compare, entryId, {
+              e with status = #Pending; errorMsg = null; syncedAt = null
+            });
+            try { await sendToQbo(entryId, payment, cfg) } catch (_e) {};
+            switch (Map.get(qboSyncLog, Text.compare, entryId)) {
+              case null  { #err(#NotFound) };
+              case (?updated) { #ok(updated) };
+            }
+          };
+        };
+      };
+    }
+  };
+
   public query func getDelinquentUnits() : async [DelinquencyRecord] {
     let active = Array.filter<CollectionCase>(
       Array.fromIter(Map.values(collectionCases)),
@@ -814,6 +980,10 @@ persistent actor Treasury {
 
   public query func getLateFeePolicy()  : async ?LateFeePolicy  { lateFeePolicy  };
   public query func getReminderPolicy() : async ?ReminderPolicy { reminderPolicy };
+
+  public query func getQBOSyncLog() : async [QBOSyncEntry] {
+    Iter.toArray(Map.values(qboSyncLog))
+  };
 
   public query func metrics() : async {
     totalAssessments: Nat;

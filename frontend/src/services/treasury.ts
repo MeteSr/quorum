@@ -179,6 +179,40 @@ export function idlFactory({ IDL }: { IDL: any }) {
     fromName:     IDL.Text,
   });
 
+  const QBOConfig = IDL.Record({
+    realmId:      IDL.Text,
+    accessToken:  IDL.Text,
+    refreshToken: IDL.Text,
+    tokenExpiry:  IDL.Int,
+  });
+
+  const QBOSyncStatus = IDL.Variant({
+    Pending: IDL.Null,
+    Synced:  IDL.Null,
+    Failed:  IDL.Null,
+  });
+
+  const QBOSyncEntry = IDL.Record({
+    id:           IDL.Text,
+    paymentId:    IDL.Text,
+    assessmentId: IDL.Text,
+    unitId:       IDL.Text,
+    amountCents:  IDL.Nat,
+    status:       QBOSyncStatus,
+    qboPaymentId: IDL.Opt(IDL.Text),
+    syncedAt:     IDL.Opt(IDL.Int),
+    errorMsg:     IDL.Opt(IDL.Text),
+    createdAt:    IDL.Int,
+  });
+
+  const QBOStatus = IDL.Record({
+    configured:  IDL.Bool,
+    realmId:     IDL.Text,
+    tokenExpiry: IDL.Int,
+  });
+
+  const ResultQBOEntry = IDL.Variant({ ok: QBOSyncEntry, err: Error });
+
   return IDL.Service({
     // wiring
     setMembersCanisterId:       IDL.Func([IDL.Text],                     [],                            []),
@@ -222,6 +256,11 @@ export function idlFactory({ IDL }: { IDL: any }) {
     getDelinquentUnits:         IDL.Func([],                              [IDL.Vec(DelinquencyRecord)],  ["query"]),
     getCollectionRecord:        IDL.Func([IDL.Text],                      [IDL.Opt(DelinquencyRecord)],  ["query"]),
     getCollectionHistory:       IDL.Func([IDL.Text],                      [IDL.Vec(CollectionEvent)],    ["query"]),
+    // QuickBooks (#19)
+    setQBOConfig:               IDL.Func([QBOConfig],                     [],                            []),
+    getQBOStatus:               IDL.Func([],                              [QBOStatus],                   ["query"]),
+    retrySync:                  IDL.Func([IDL.Text],                      [ResultQBOEntry],              []),
+    getQBOSyncLog:              IDL.Func([],                              [IDL.Vec(QBOSyncEntry)],       ["query"]),
   });
 }
 
@@ -612,4 +651,62 @@ export async function resolveCollection(
   const actor = await createActor() as any;
   if (!actor) return { err: { NotFound: null } };
   return actor.resolveCollection(unitId, note);
+}
+
+// ─── QuickBooks types (#19) ───────────────────────────────────────────────────
+
+export interface QBOConfig {
+  realmId:      string;
+  accessToken:  string;
+  refreshToken: string;
+  tokenExpiry:  bigint;
+}
+
+export type QBOSyncStatus = { Pending: null } | { Synced: null } | { Failed: null };
+
+export interface QBOSyncEntry {
+  id:           string;
+  paymentId:    string;
+  assessmentId: string;
+  unitId:       string;
+  amountCents:  bigint;
+  status:       QBOSyncStatus;
+  qboPaymentId: [] | [string];
+  syncedAt:     [] | [bigint];
+  errorMsg:     [] | [string];
+  createdAt:    bigint;
+}
+
+export interface QBOStatus {
+  configured:  boolean;
+  realmId:     string;
+  tokenExpiry: bigint;
+}
+
+// ─── QuickBooks service functions (#19) ──────────────────────────────────────
+
+export async function setQBOConfig(config: QBOConfig): Promise<void> {
+  const actor = await createActor() as any;
+  if (!actor) return;
+  return actor.setQBOConfig(config);
+}
+
+export async function getQBOStatus(): Promise<QBOStatus> {
+  const actor = await createActor() as any;
+  if (!actor) return { configured: false, realmId: "", tokenExpiry: BigInt(0) };
+  return actor.getQBOStatus();
+}
+
+export async function getQBOSyncLog(): Promise<QBOSyncEntry[]> {
+  const actor = await createActor() as any;
+  if (!actor) return [];
+  return actor.getQBOSyncLog();
+}
+
+export async function retrySync(
+  entryId: string,
+): Promise<{ ok: QBOSyncEntry } | { err: TreasuryError }> {
+  const actor = await createActor() as any;
+  if (!actor) return { err: { NotFound: null } };
+  return actor.retrySync(entryId);
 }
