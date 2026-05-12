@@ -18,6 +18,7 @@ import { idlFactory as arcIdl }           from "../../services/arc";
 import { idlFactory as parkingIdl }       from "../../services/parking";
 import { idlFactory as vendorsIdl }       from "../../services/vendors";
 import { idlFactory as discussionsIdl }  from "../../services/discussions";
+import { idlFactory as amenitiesIdl }    from "../../services/amenities";
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
 
@@ -782,5 +783,81 @@ describe("discussions IDL factory", () => {
     const m = methods.get("getRepliesForPost")!;
     expect(m.isQuery).toBe(true);
     expect(m.argTypes).toHaveLength(1);
+  });
+});
+
+// ─── Amenities ───────────────────────────────────────────────────────────────
+
+describe("amenities IDL factory", () => {
+  let methods: ReturnType<typeof extractService>;
+  beforeAll(() => { methods = extractService(amenitiesIdl); });
+
+  test("exposes all expected methods", () => {
+    const expected = [
+      "setAdmin",
+      "createAmenity",
+      "updateAmenity",
+      "createReservation",
+      "cancelReservation",
+      "completeReservation",
+      "blockDate",
+      "unblockDate",
+      "joinWaitlist",
+      "leaveWaitlist",
+      "getAmenities",
+      "getAmenity",
+      "getReservationsForAmenity",
+      "getMyReservations",
+      "getAvailability",
+      "getBlockedDates",
+      "getWaitlistForSlot",
+      "getMyWaitlistEntries",
+      "metrics",
+    ];
+    for (const name of expected) {
+      expect(methods.has(name), `missing method: ${name}`).toBe(true);
+    }
+  });
+
+  test("createAmenity is an update call with 7 args", () => {
+    const m = methods.get("createAmenity")!;
+    expect(m.isQuery).toBe(false);
+    expect(m.argTypes).toHaveLength(7);
+  });
+
+  test("createReservation is an update call with 5 args", () => {
+    const m = methods.get("createReservation")!;
+    expect(m.isQuery).toBe(false);
+    expect(m.argTypes).toHaveLength(5);
+  });
+
+  test("getAmenities is a query with 0 args", () => {
+    const m = methods.get("getAmenities")!;
+    expect(m.isQuery).toBe(true);
+    expect(m.argTypes).toHaveLength(0);
+  });
+
+  test("getAvailability is a query with 2 args", () => {
+    const m = methods.get("getAvailability")!;
+    expect(m.isQuery).toBe(true);
+    expect(m.argTypes).toHaveLength(2);
+  });
+
+  test("blockDate is an update call with 3 args", () => {
+    const m = methods.get("blockDate")!;
+    expect(m.isQuery).toBe(false);
+    expect(m.argTypes).toHaveLength(3);
+  });
+
+  test("getWaitlistForSlot is a query with 3 args", () => {
+    const m = methods.get("getWaitlistForSlot")!;
+    expect(m.isQuery).toBe(true);
+    expect(m.argTypes).toHaveLength(3);
+  });
+
+  test("metrics is a query with 0 args", () => {
+    const m = methods.get("metrics")!;
+    expect(m.isQuery).toBe(true);
+    expect(m.argTypes).toHaveLength(0);
   });
 });
