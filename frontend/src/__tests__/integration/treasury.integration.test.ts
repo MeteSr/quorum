@@ -376,3 +376,14 @@ describe.skipIf(!deployed)("collections workflow (#28)", () => {
     expect(result.err).toHaveProperty("NotFound");
   });
 });
+
+// ─── Email config (#32) ────────────────────────────────────────────────────────
+
+describe.skipIf(!deployed)("setEmailConfig — wiring (#32)", () => {
+  it("setEmailConfig accepts a valid config object without throwing", async () => {
+    const a = await getActor();
+    await expect(
+      a.setEmailConfig({ resendApiKey: "re_test_key", fromEmail: "hoa@example.com", fromName: "Quorum HOA" })
+    ).resolves.not.toThrow();
+  });
+});

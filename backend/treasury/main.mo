@@ -89,6 +89,12 @@ persistent actor Treasury {
     sentAt:       Time.Time;
   };
 
+  public type EmailConfig = {
+    resendApiKey: Text;
+    fromEmail:    Text;
+    fromName:     Text;
+  };
+
   public type CheckoutSession = { id: Text; url: Text };
 
   public type Error = {
@@ -224,6 +230,7 @@ persistent actor Treasury {
   private var stripeConfig   : ?StripeConfig   = null;
   private var lateFeePolicy  : ?LateFeePolicy  = null;
   private var reminderPolicy : ?ReminderPolicy = null;
+  private var emailConfig    : ?EmailConfig    = null;
 
   private let budgetLines        = Map.empty<Text, BudgetLine>();  // key: year#category
   private var reserveFundBalance : Nat = 0;
@@ -310,6 +317,10 @@ persistent actor Treasury {
 
   public shared func setReminderPolicy(policy: ReminderPolicy) : async () {
     reminderPolicy := ?policy;
+  };
+
+  public shared func setEmailConfig(config: EmailConfig) : async () {
+    emailConfig := ?config;
   };
 
   public shared func setReserveFundBalance(balance : Nat) : async () {
@@ -846,6 +857,36 @@ persistent actor Treasury {
     }
   };
 
+  // ─── Email delivery helper (#32) ─────────────────────────────────────────────
+
+  private func sendEmail(unitId : Text, subject : Text, htmlBody : Text) : async () {
+    let cfg = switch (emailConfig) { case null { return }; case (?c) c };
+    if (membersCanisterId == "") return;
+    let mActor : actor { getMemberByUnit : shared query (Text) -> async ?{ email : Text } } = actor(membersCanisterId);
+    try {
+      switch (await mActor.getMemberByUnit(unitId)) {
+        case null {};
+        case (?m) {
+          if (m.email == "") return;
+          let json = "{\"from\":\"" # cfg.fromName # " <" # cfg.fromEmail # ">\",\"to\":[\"" # m.email # "\"],\"subject\":\"" # subject # "\",\"html\":\"" # htmlBody # "\"}";
+          try {
+            ignore await (with cycles = 3_000_000_000) ic.http_request({
+              url               = "https://api.resend.com/emails";
+              max_response_bytes = ?Nat64.fromNat(4_096);
+              headers           = [
+                { name = "authorization"; value = "Bearer " # cfg.resendApiKey },
+                { name = "content-type";  value = "application/json" },
+              ];
+              body              = ?Text.encodeUtf8(json);
+              method            = #post;
+              transform         = ?{ function = transform; context = Blob.fromArray([]) };
+            });
+          } catch (_) {};
+        };
+      };
+    } catch (_) {};
+  };
+
   // ─── Heartbeat: Late Fees (#27) + Reminders (#32) ────────────────────────────
   // Fires every ~2 seconds; skips until 24 h have elapsed since last scan.
   // lateFeeKeyed / reminderKeyed provide idempotency across restarts.
@@ -965,6 +1006,9 @@ persistent actor Treasury {
               };
               Map.add(reminderLog,   Text.compare, r.id,   r);
               Map.add(reminderKeyed, Text.compare, remKey, true);
+              let amt = "$" # Nat.toText(a.amountCents / 100);
+              await sendEmail(a.unitId, "Upcoming Payment Due — HOA Assessment",
+                "<p>Your HOA assessment of " # amt # " is due in " # Nat.toText(days) # " day(s). Please log in to pay online.</p>");
             };
           };
 
@@ -984,6 +1028,9 @@ persistent actor Treasury {
               };
               Map.add(reminderLog,   Text.compare, r.id,   r);
               Map.add(reminderKeyed, Text.compare, remKey, true);
+              let amt = "$" # Nat.toText(a.amountCents / 100);
+              await sendEmail(a.unitId, "Payment Past Due — HOA Assessment",
+                "<p>Your HOA assessment of " # amt # " is now " # Nat.toText(days) # " day(s) past due. Please log in to pay immediately.</p>");
             };
           };
         };

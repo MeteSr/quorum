@@ -143,3 +143,44 @@ describe.skipIf(!deployed)("getBroadcasts + getRecentBroadcasts", () => {
     expect(none.length).toBe(0);
   });
 });
+
+describe.skipIf(!deployed)("sendBulkEmail — segment variants (#14)", () => {
+  beforeAll(async () => {
+    const a = await getActor();
+    const membersId = (process.env as any).CANISTER_ID_MEMBERS || "";
+    await a.setEmailConfig({ resendApiKey: "re_test_key", fromEmail: "test@example.com", fromName: "Integration Test" });
+    if (membersId) await a.setMembersCanisterId(membersId);
+  });
+
+  it("sendBulkEmail with #All segment returns ok with sentCount + failedCount", async () => {
+    const a = await getActor();
+    const result = await a.sendBulkEmail(
+      "Integration test email",
+      "This is an integration test bulk email.",
+      { All: null }
+    ) as any;
+    expect("ok" in result).toBe(true);
+    expect(typeof result.ok.sentCount).toBe("bigint");
+    expect(typeof result.ok.failedCount).toBe("bigint");
+  });
+
+  it("sendBulkEmail with #ByRole variant returns ok", async () => {
+    const a = await getActor();
+    const result = await a.sendBulkEmail(
+      "Board-only email",
+      "For board members only.",
+      { ByRole: "BoardMember" }
+    ) as any;
+    expect("ok" in result).toBe(true);
+  });
+
+  it("sendBulkEmail with #UnitIds variant returns ok", async () => {
+    const a = await getActor();
+    const result = await a.sendBulkEmail(
+      "Unit-specific email",
+      "For units 1A and 2B.",
+      { UnitIds: ["1A", "2B"] }
+    ) as any;
+    expect("ok" in result).toBe(true);
+  });
+});

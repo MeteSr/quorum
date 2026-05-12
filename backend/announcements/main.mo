@@ -7,9 +7,11 @@
  */
 
 import Array     "mo:core/Array";
+import Blob      "mo:core/Blob";
 import Iter      "mo:core/Iter";
 import Map       "mo:core/Map";
 import Nat       "mo:core/Nat";
+import Nat64     "mo:core/Nat64";
 import Principal "mo:core/Principal";
 import Result    "mo:core/Result";
 import Text      "mo:core/Text";
@@ -48,12 +50,56 @@ persistent actor Announcements {
     #InvalidInput: Text;
   };
 
+  public type EmailConfig = {
+    resendApiKey: Text;
+    fromEmail:    Text;
+    fromName:     Text;
+  };
+
+  public type EmailSegment = {
+    #All;
+    #ByRole:  Text;    // "Homeowner", "BoardMember", etc.
+    #UnitIds: [Text];
+  };
+
+  public type BulkEmailResult = {
+    sentCount:   Nat;
+    failedCount: Nat;
+  };
+
+  // ─── IC HTTP Outcall interface ────────────────────────────────────────────────
+
+  public type HttpHeader    = { name : Text; value : Text };
+  public type HttpMethod    = { #get; #head; #post };
+  public type HttpResponse  = { status : Nat; headers : [HttpHeader]; body : Blob };
+  public type TransformArgs = { response : HttpResponse; context : Blob };
+
+  let ic : actor {
+    http_request : shared ({
+      url               : Text;
+      max_response_bytes : ?Nat64;
+      headers           : [HttpHeader];
+      body              : ?Blob;
+      method            : HttpMethod;
+      transform         : ?{
+        function : shared query (TransformArgs) -> async HttpResponse;
+        context  : Blob;
+      };
+    }) -> async HttpResponse;
+  } = actor "aaaaa-aa";
+
+  public query func transform(args : TransformArgs) : async HttpResponse {
+    { status = args.response.status; headers = []; body = args.response.body }
+  };
+
   // ─── Stable State ─────────────────────────────────────────────────────────────
 
-  private var counter          : Nat = 0;
-  private var broadcastCounter : Nat = 0;
+  private var counter           : Nat = 0;
+  private var broadcastCounter  : Nat = 0;
   private let announcements = Map.empty<Text, Announcement>();
   private let broadcasts    = Map.empty<Text, Broadcast>();
+  private var emailConfig       : ?EmailConfig = null;
+  private var membersCanisterId : Text         = "";
 
   // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -65,6 +111,88 @@ persistent actor Announcements {
   private func nextBroadcastId() : Text {
     broadcastCounter += 1;
     "BCAST_" # Nat.toText(broadcastCounter)
+  };
+
+  // ─── Email wiring ─────────────────────────────────────────────────────────────
+
+  public shared func setEmailConfig(config : EmailConfig) : async () {
+    emailConfig := ?config;
+  };
+
+  public shared func setMembersCanisterId(id : Text) : async () {
+    membersCanisterId := id;
+  };
+
+  // ─── Bulk email (#14) ─────────────────────────────────────────────────────────
+
+  public shared(msg) func sendBulkEmail(
+    subject  : Text,
+    body     : Text,
+    segment  : EmailSegment
+  ) : async Result.Result<BulkEmailResult, Error> {
+    if (Principal.isAnonymous(msg.caller)) return #err(#NotAuthorized);
+    let cfg = switch (emailConfig) {
+      case null  { return #err(#InvalidInput("Email not configured")) };
+      case (?c)  { c };
+    };
+    if (membersCanisterId == "") return #err(#InvalidInput("Members canister not configured"));
+
+    type RemoteMember = {
+      email:       Text;
+      unitId:      Text;
+      isActive:    Bool;
+      role:        { #Homeowner; #BoardMember; #BoardPresident; #Treasurer; #Secretary; #PropertyManager };
+      principal:   Principal;
+      displayName: Text;
+      joinedAt:    Int;
+    };
+    let membersActor : actor { getActiveMembers : shared query () -> async [RemoteMember] } = actor(membersCanisterId);
+    let allActive = try { await membersActor.getActiveMembers() }
+      catch (_) { return #err(#InvalidInput("Members canister unreachable")) };
+
+    let includesUnit = func(ids : [Text], uid : Text) : Bool {
+      var found = false;
+      for (i in ids.vals()) { if (i == uid) found := true };
+      found
+    };
+    let roleLabel = func(r : { #Homeowner; #BoardMember; #BoardPresident; #Treasurer; #Secretary; #PropertyManager }) : Text {
+      switch r {
+        case (#Homeowner)       "Homeowner";
+        case (#BoardMember)     "BoardMember";
+        case (#BoardPresident)  "BoardPresident";
+        case (#Treasurer)       "Treasurer";
+        case (#Secretary)       "Secretary";
+        case (#PropertyManager) "PropertyManager";
+      }
+    };
+
+    var sent   = 0;
+    var failed = 0;
+    for (m in allActive.vals()) {
+      let shouldSend = switch (segment) {
+        case (#All)          { true };
+        case (#ByRole(role)) { roleLabel(m.role) == role };
+        case (#UnitIds(ids)) { includesUnit(ids, m.unitId) };
+      };
+      if (shouldSend and m.email != "") {
+        let json = "{\"from\":\"" # cfg.fromName # " <" # cfg.fromEmail # ">\",\"to\":[\"" # m.email # "\"],\"subject\":\"" # subject # "\",\"html\":\"<p>" # body # "</p>\"}";
+        try {
+          ignore await (with cycles = 3_000_000_000) ic.http_request({
+            url               = "https://api.resend.com/emails";
+            max_response_bytes = ?Nat64.fromNat(4_096);
+            headers           = [
+              { name = "authorization"; value = "Bearer " # cfg.resendApiKey },
+              { name = "content-type";  value = "application/json" },
+            ];
+            body              = ?Text.encodeUtf8(json);
+            method            = #post;
+            transform         = ?{ function = transform; context = Blob.fromArray([]) };
+          });
+          sent += 1;
+        } catch (_) { failed += 1 };
+      };
+    };
+    #ok({ sentCount = sent; failedCount = failed })
   };
 
   // ─── Post / Delete ────────────────────────────────────────────────────────────

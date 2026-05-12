@@ -246,4 +246,11 @@ persistent actor Members {
   public query func isBoardMember(p : Principal) : async Bool {
     isBoard(p)
   };
+
+  public query func getMemberByUnit(unitId : Text) : async ?Member {
+    for (m in Map.values(members)) {
+      if (m.unitId == unitId and m.isActive) return ?m;
+    };
+    null
+  };
 };

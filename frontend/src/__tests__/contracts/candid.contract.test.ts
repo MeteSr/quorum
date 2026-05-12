@@ -51,6 +51,7 @@ describe("members IDL factory", () => {
       "getCommunityProfile",
       "getInviteCode",
       "getMember",
+      "getMemberByUnit",
       "getMyProfile",
       "initAdmin",
       "isBoardMember",
@@ -181,6 +182,7 @@ describe("treasury IDL factory", () => {
       "postAssessment",
       "resolveCollection",
       "setBudgetLine",
+      "setEmailConfig",
       "setLateFeePolicy",
       "setMembersCanisterId",
       "setReminderPolicy",
@@ -287,6 +289,10 @@ describe("announcements IDL factory", () => {
       "getRecentBroadcasts",
       "getUrgent",
       "post",
+      "sendBulkEmail",
+      "setEmailConfig",
+      "setMembersCanisterId",
+      "transform",
     ];
     expect([...methods.keys()].sort()).toEqual(expected);
   });

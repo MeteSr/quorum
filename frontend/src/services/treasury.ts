@@ -173,9 +173,16 @@ export function idlFactory({ IDL }: { IDL: any }) {
     generatedAt:      IDL.Int,
   });
 
+  const EmailConfig = IDL.Record({
+    resendApiKey: IDL.Text,
+    fromEmail:    IDL.Text,
+    fromName:     IDL.Text,
+  });
+
   return IDL.Service({
     // wiring
     setMembersCanisterId:       IDL.Func([IDL.Text],                     [],                            []),
+    setEmailConfig:             IDL.Func([EmailConfig],                   [],                            []),
     configureStripe:            IDL.Func([StripeConfig],                  [],                            []),
     setLateFeePolicy:           IDL.Func([LateFeePolicy],                 [],                            []),
     setReminderPolicy:          IDL.Func([ReminderPolicy],                [],                            []),
@@ -292,6 +299,12 @@ export interface TreasuryMetrics {
   lateFeeCount:     bigint;
   remindersSent:    bigint;
   delinquentCount:  bigint;
+}
+
+export interface EmailConfig {
+  resendApiKey: string;
+  fromEmail:    string;
+  fromName:     string;
 }
 
 export type TreasuryError =
@@ -414,6 +427,12 @@ export async function setReminderPolicy(policy: ReminderPolicy): Promise<void> {
   const actor = await createActor() as any;
   if (!actor) return;
   return actor.setReminderPolicy(policy);
+}
+
+export async function setEmailConfig(config: EmailConfig): Promise<void> {
+  const actor = await createActor() as any;
+  if (!actor) return;
+  return actor.setEmailConfig(config);
 }
 
 export async function getMetrics(): Promise<TreasuryMetrics | null> {
