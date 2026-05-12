@@ -23,6 +23,7 @@ import MemberBenefitsPage  from "@/pages/MemberBenefitsPage";
 import MembersPage         from "@/pages/MembersPage";
 import PWAInstallBanner     from "@/components/PWAInstallBanner";
 import ShareView            from "@/pages/ShareView";
+import PublicPortalPage     from "@/pages/PublicPortalPage";
 
 const S = {
   paper:    "#F9F6F0",
@@ -146,6 +147,7 @@ export default function App() {
     <BrowserRouter>
       <Routes>
         <Route path="/share/:token" element={<ShareView />} />
+        <Route path="/portal"       element={<PublicPortalPage />} />
         <Route path="*" element={
           <AuthProvider>
             <AppShell />

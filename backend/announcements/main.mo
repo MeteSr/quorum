@@ -25,6 +25,8 @@ persistent actor Announcements {
 
   public type Severity = { #Info; #Warning; #Emergency };
 
+  public type Visibility = { #Public; #Members };
+
   public type Broadcast = {
     id:       Text;
     title:    Text;
@@ -39,6 +41,7 @@ persistent actor Announcements {
     title:       Text;
     body:        Text;
     priority:    Priority;
+    visibility:  Visibility;  // #Public = visible on community portal; #Members = members only
     postedBy:    Principal;
     postedAt:    Time.Time;
     expiresAt:   ?Time.Time;  // null = never expires
@@ -198,20 +201,22 @@ persistent actor Announcements {
   // ─── Post / Delete ────────────────────────────────────────────────────────────
 
   public shared(msg) func post(
-    title:     Text,
-    body:      Text,
-    priority:  Priority,
-    expiresAt: ?Time.Time
+    title:      Text,
+    body:       Text,
+    priority:   Priority,
+    visibility: Visibility,
+    expiresAt:  ?Time.Time
   ) : async Result.Result<Announcement, Error> {
     if (Text.size(title) == 0) return #err(#InvalidInput("title required"));
     if (Text.size(body)  == 0) return #err(#InvalidInput("body required"));
     let ann : Announcement = {
-      id       = nextId();
+      id         = nextId();
       title;
       body;
       priority;
-      postedBy = msg.caller;
-      postedAt = Time.now();
+      visibility;
+      postedBy   = msg.caller;
+      postedAt   = Time.now();
       expiresAt;
     };
     Map.add(announcements, Text.compare, ann.id, ann);
@@ -259,6 +264,19 @@ persistent actor Announcements {
 
   public query func getAll() : async [Announcement] {
     Iter.toArray(Map.values(announcements))
+  };
+
+  // No auth required — used by the public community portal (#24).
+  public query func getPublicAnnouncements() : async [Announcement] {
+    let now = Time.now();
+    Array.filter<Announcement>(Iter.toArray(Map.values(announcements)), func(a) {
+      a.visibility == #Public and (
+        switch (a.expiresAt) {
+          case null     { true };
+          case (?expiry){ now < expiry };
+        }
+      )
+    })
   };
 
   // ─── Emergency Broadcasts ─────────────────────────────────────────────────────

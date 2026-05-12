@@ -22,16 +22,25 @@ import {
   setEmailConfig,
   setMembersCanisterId,
   sendBulkEmail,
+  getPublicAnnouncements,
 } from "@/services/announcements";
 
 const MOCK_NOTICE: any = {
-  id:        "notice-1",
-  title:     "Pool closure for maintenance",
-  body:      "The pool will be closed Saturday 9am–2pm.",
-  priority:  { Normal: null },
-  postedBy:  { toText: () => "board-principal" } as any,
-  postedAt:  BigInt(1_700_000_000_000_000_000),
-  expiresAt: [] as [],
+  id:         "notice-1",
+  title:      "Pool closure for maintenance",
+  body:       "The pool will be closed Saturday 9am–2pm.",
+  priority:   { Normal: null },
+  visibility: { Members: null },
+  postedBy:   { toText: () => "board-principal" } as any,
+  postedAt:   BigInt(1_700_000_000_000_000_000),
+  expiresAt:  [] as [],
+};
+
+const MOCK_PUBLIC_NOTICE: any = {
+  ...MOCK_NOTICE,
+  id:         "notice-3",
+  title:      "Annual BBQ — open to all",
+  visibility: { Public: null },
 };
 
 const MOCK_URGENT: any = {
@@ -54,10 +63,11 @@ const MOCK_BULK_RESULT = { sentCount: BigInt(5), failedCount: BigInt(0) };
 
 function makeMockActor(overrides: Record<string, any> = {}) {
   return {
-    getActive:            vi.fn().mockResolvedValue([MOCK_NOTICE]),
-    getUrgent:            vi.fn().mockResolvedValue([MOCK_URGENT]),
-    getAll:               vi.fn().mockResolvedValue([MOCK_NOTICE, MOCK_URGENT]),
-    post:                 vi.fn().mockResolvedValue({ ok: MOCK_NOTICE }),
+    getActive:               vi.fn().mockResolvedValue([MOCK_NOTICE]),
+    getUrgent:               vi.fn().mockResolvedValue([MOCK_URGENT]),
+    getAll:                  vi.fn().mockResolvedValue([MOCK_NOTICE, MOCK_URGENT]),
+    getPublicAnnouncements:  vi.fn().mockResolvedValue([MOCK_PUBLIC_NOTICE]),
+    post:                    vi.fn().mockResolvedValue({ ok: MOCK_NOTICE }),
     delete:               vi.fn().mockResolvedValue({ ok: null }),
     broadcastEmergency:   vi.fn().mockResolvedValue({ ok: MOCK_BROADCAST }),
     getBroadcasts:        vi.fn().mockResolvedValue([MOCK_BROADCAST]),
@@ -101,18 +111,43 @@ describe("announcements service — post", () => {
   beforeEach(() => vi.mocked(Actor.createActor).mockReturnValue(makeMockActor() as any));
 
   it("returns ok with the created announcement", async () => {
-    const result = await post("Pool closure", "Closed Saturday", { Normal: null }, []);
+    const result = await post("Pool closure", "Closed Saturday", { Normal: null }, { Members: null }, []);
     expect(result).toHaveProperty("ok");
     expect((result as any).ok.title).toBe("Pool closure for maintenance"); // mock value
+  });
+
+  it("passes visibility variant to actor", async () => {
+    const spy = vi.fn().mockResolvedValue({ ok: MOCK_PUBLIC_NOTICE });
+    vi.mocked(Actor.createActor).mockReturnValue(makeMockActor({ post: spy }) as any);
+    await post("BBQ", "Come join us!", { Normal: null }, { Public: null }, []);
+    expect(spy).toHaveBeenCalledWith("BBQ", "Come join us!", { Normal: null }, { Public: null }, []);
   });
 
   it("returns err when caller is not authorized", async () => {
     vi.mocked(Actor.createActor).mockReturnValue(
       makeMockActor({ post: vi.fn().mockResolvedValue({ err: { NotAuthorized: null } }) }) as any
     );
-    const result = await post("Title", "Body", { Normal: null }, []);
+    const result = await post("Title", "Body", { Normal: null }, { Members: null }, []);
     expect(result).toHaveProperty("err");
     expect((result as any).err).toHaveProperty("NotAuthorized");
+  });
+});
+
+describe("announcements service — getPublicAnnouncements (#24)", () => {
+  beforeEach(() => vi.mocked(Actor.createActor).mockReturnValue(makeMockActor() as any));
+
+  it("returns only public-visibility announcements", async () => {
+    const results = await getPublicAnnouncements();
+    expect(results).toHaveLength(1);
+    expect(results[0].visibility).toEqual({ Public: null });
+    expect(results[0].title).toBe("Annual BBQ — open to all");
+  });
+
+  it("returns empty array when no public announcements", async () => {
+    vi.mocked(Actor.createActor).mockReturnValue(
+      makeMockActor({ getPublicAnnouncements: vi.fn().mockResolvedValue([]) }) as any
+    );
+    expect(await getPublicAnnouncements()).toEqual([]);
   });
 });
 

@@ -33,6 +33,7 @@ describe.skipIf(!deployed)("post — Candid serialization", () => {
       `Integration notice ${RUN_ID}`,
       "Testing Candid round-trip for announcements.",
       { Normal: null },
+      { Members: null },
       []
     ) as any;
     if ("err" in result) throw new Error(JSON.stringify(result.err));
@@ -70,6 +71,7 @@ describe.skipIf(!deployed)("post — Urgent priority", () => {
       `Urgent notice ${RUN_ID}`,
       "This is an urgent integration test notice.",
       { Urgent: null },
+      { Members: null },
       []
     ) as any;
     if ("err" in result) throw new Error(JSON.stringify(result.err));

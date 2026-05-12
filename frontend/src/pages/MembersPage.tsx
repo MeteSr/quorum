@@ -1,7 +1,9 @@
 import { useEffect, useState } from "react";
 import {
   getAllMembers, getMyShareLinks, createShareLink, revokeShareLink,
-  resendWelcomePacket, type Member, type ShareLink, type ShareScope,
+  resendWelcomePacket, getWebsiteConfig, setCommunitySlug, setCustomDomain,
+  setAccentColor, setPageBlocks,
+  type Member, type ShareLink, type ShareScope, type WebsiteConfig, type PageBlock,
 } from "@/services/members";
 import { getWelcomePacketConfig, setWelcomePacketConfig, type WelcomePacketConfig } from "@/services/governance";
 import { useAuthStore } from "@/store/authStore";
@@ -18,8 +20,6 @@ const S = {
   mono:     "'IBM Plex Mono', monospace",
   sans:     "'IBM Plex Sans', sans-serif",
 };
-
-const ORIGIN = window.location.origin;
 
 function isBoardRole(member: Member): boolean {
   return (
@@ -397,9 +397,189 @@ function WelcomePacketForm() {
   );
 }
 
+// ─── WebsiteSettingsPanel ─────────────────────────────────────────────────────
+
+const ORIGIN = typeof window !== "undefined" ? window.location.origin : "";
+
+function WebsiteSettingsPanel() {
+  const [cfg, setCfg]           = useState<WebsiteConfig | null>(null);
+  const [slug, setSlug]         = useState("");
+  const [domain, setDomain]     = useState("");
+  const [accent, setAccent]     = useState("#1B2D4F");
+  const [blockText, setBlockText] = useState("");
+  const [saving, setSaving]     = useState<string | null>(null);
+  const [saved, setSaved]       = useState<string | null>(null);
+  const [error, setError]       = useState<string | null>(null);
+
+  useEffect(() => {
+    getWebsiteConfig().then(r => {
+      if ("ok" in r) {
+        setCfg(r.ok);
+        setSlug(r.ok.slug[0] ?? "");
+        setDomain(r.ok.customDomain[0] ?? "");
+        setAccent(r.ok.accentColor);
+        const textBlocks = r.ok.pageBlocks.filter((b): b is { Text: string } => "Text" in b);
+        setBlockText(textBlocks.map(b => b.Text).join("\n\n"));
+      }
+    });
+  }, []);
+
+  async function save(field: string, fn: () => Promise<{ ok: WebsiteConfig } | { err: any }>) {
+    setSaving(field);
+    setError(null);
+    const r = await fn();
+    if ("ok" in r) {
+      setCfg(r.ok);
+      setSaved(field);
+      setTimeout(() => setSaved(null), 3000);
+    } else {
+      const e = r.err;
+      setError("InvalidInput" in e ? e.InvalidInput : "Not authorized");
+    }
+    setSaving(null);
+  }
+
+  function buildPageBlocks(): PageBlock[] {
+    const blocks: PageBlock[] = [];
+    const parts = blockText.split(/\n\n+/).map(s => s.trim()).filter(Boolean);
+    for (const p of parts) blocks.push({ Text: p });
+    blocks.push({ AnnouncementFeed: null });
+    return blocks;
+  }
+
+  const portalUrl = cfg?.slug[0] ? `${ORIGIN}/portal` : null;
+
+  return (
+    <div>
+      <div style={{ fontFamily: S.mono, fontSize: "0.62rem", textTransform: "uppercase", letterSpacing: "0.1em", color: S.inkLight, marginBottom: "1.25rem" }}>
+        Community Website
+      </div>
+      <p style={{ fontFamily: S.sans, fontSize: "0.88rem", color: S.inkLight, marginBottom: "1.75rem" }}>
+        Configure your public-facing community portal. Board members and residents can access it without logging in.
+      </p>
+
+      {error && (
+        <div style={{ fontFamily: S.sans, fontSize: "0.82rem", color: S.rust, marginBottom: "1rem", padding: "0.5rem 0.75rem", border: `1px solid ${S.rust}` }}>
+          {error}
+        </div>
+      )}
+
+      {/* Portal link */}
+      {portalUrl && (
+        <div style={{ padding: "0.75rem 1rem", border: `1px solid ${S.rule}`, marginBottom: "1.75rem", display: "flex", alignItems: "center", gap: "1rem" }}>
+          <span style={{ fontFamily: S.mono, fontSize: "0.68rem", color: S.ink, flex: 1 }}>{portalUrl}</span>
+          <a
+            href="/portal" target="_blank" rel="noreferrer"
+            style={{ fontFamily: S.mono, fontSize: "0.6rem", textTransform: "uppercase", letterSpacing: "0.08em", color: S.navy, textDecoration: "none" }}
+          >
+            Open →
+          </a>
+        </div>
+      )}
+
+      <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
+
+        {/* Slug */}
+        <div>
+          <label style={{ fontFamily: S.mono, fontSize: "0.6rem", textTransform: "uppercase", letterSpacing: "0.08em", display: "block", marginBottom: 4 }}>
+            Community Slug
+          </label>
+          <p style={{ fontFamily: S.sans, fontSize: "0.78rem", color: S.inkLight, margin: "0 0 6px" }}>
+            Your portal will be accessible at <strong>{ORIGIN}/portal</strong> (slug reserved for subdomain routing).
+          </p>
+          <div style={{ display: "flex", gap: "0.5rem" }}>
+            <input
+              type="text" value={slug} onChange={e => setSlug(e.target.value.toLowerCase())}
+              placeholder="sunset-palms"
+              style={{ flex: 1, fontFamily: S.sans, fontSize: "0.88rem", padding: "0.4rem 0.6rem", border: `1px solid ${S.rule}` }}
+            />
+            <button
+              onClick={() => save("slug", () => setCommunitySlug(slug))}
+              disabled={saving === "slug"}
+              style={{ background: S.navy, border: "none", color: "white", fontFamily: S.mono, fontSize: "0.58rem", letterSpacing: "0.08em", textTransform: "uppercase", padding: "0 1rem", cursor: "pointer" }}
+            >
+              {saving === "slug" ? "Saving…" : saved === "slug" ? "Saved" : "Save"}
+            </button>
+          </div>
+        </div>
+
+        {/* Custom domain */}
+        <div>
+          <label style={{ fontFamily: S.mono, fontSize: "0.6rem", textTransform: "uppercase", letterSpacing: "0.08em", display: "block", marginBottom: 4 }}>
+            Custom Domain
+          </label>
+          <p style={{ fontFamily: S.sans, fontSize: "0.78rem", color: S.inkLight, margin: "0 0 6px" }}>
+            Point a CNAME from your domain to <code style={{ fontFamily: S.mono, fontSize: "0.75rem" }}>icp-api.io</code>, then enter your domain here.
+          </p>
+          <div style={{ display: "flex", gap: "0.5rem" }}>
+            <input
+              type="text" value={domain} onChange={e => setDomain(e.target.value)}
+              placeholder="www.sunsetpalms.com"
+              style={{ flex: 1, fontFamily: S.sans, fontSize: "0.88rem", padding: "0.4rem 0.6rem", border: `1px solid ${S.rule}` }}
+            />
+            <button
+              onClick={() => save("domain", () => setCustomDomain(domain))}
+              disabled={saving === "domain"}
+              style={{ background: S.navy, border: "none", color: "white", fontFamily: S.mono, fontSize: "0.58rem", letterSpacing: "0.08em", textTransform: "uppercase", padding: "0 1rem", cursor: "pointer" }}
+            >
+              {saving === "domain" ? "Saving…" : saved === "domain" ? "Saved" : "Save"}
+            </button>
+          </div>
+        </div>
+
+        {/* Accent color */}
+        <div>
+          <label style={{ fontFamily: S.mono, fontSize: "0.6rem", textTransform: "uppercase", letterSpacing: "0.08em", display: "block", marginBottom: 4 }}>
+            Accent Color
+          </label>
+          <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
+            <input
+              type="color" value={accent} onChange={e => setAccent(e.target.value)}
+              style={{ width: 48, height: 36, border: `1px solid ${S.rule}`, padding: 2, cursor: "pointer" }}
+            />
+            <input
+              type="text" value={accent} onChange={e => setAccent(e.target.value)}
+              style={{ width: 100, fontFamily: S.mono, fontSize: "0.82rem", padding: "0.4rem 0.6rem", border: `1px solid ${S.rule}` }}
+            />
+            <button
+              onClick={() => save("accent", () => setAccentColor(accent))}
+              disabled={saving === "accent"}
+              style={{ background: S.navy, border: "none", color: "white", fontFamily: S.mono, fontSize: "0.58rem", letterSpacing: "0.08em", textTransform: "uppercase", padding: "0.4rem 1rem", cursor: "pointer" }}
+            >
+              {saving === "accent" ? "Saving…" : saved === "accent" ? "Saved" : "Save"}
+            </button>
+          </div>
+        </div>
+
+        {/* Page content blocks */}
+        <div>
+          <label style={{ fontFamily: S.mono, fontSize: "0.6rem", textTransform: "uppercase", letterSpacing: "0.08em", display: "block", marginBottom: 4 }}>
+            Page Content
+          </label>
+          <p style={{ fontFamily: S.sans, fontSize: "0.78rem", color: S.inkLight, margin: "0 0 6px" }}>
+            Enter paragraphs separated by blank lines. Public announcements are shown automatically below.
+          </p>
+          <textarea
+            value={blockText} onChange={e => setBlockText(e.target.value)} rows={6}
+            placeholder={"Welcome to Sunset Palms HOA.\n\nWe are a community of 120 homes in Sarasota, FL."}
+            style={{ width: "100%", fontFamily: S.sans, fontSize: "0.88rem", padding: "0.4rem 0.6rem", border: `1px solid ${S.rule}`, resize: "vertical", boxSizing: "border-box" }}
+          />
+          <button
+            onClick={() => save("blocks", () => setPageBlocks(buildPageBlocks()))}
+            disabled={saving === "blocks"}
+            style={{ marginTop: "0.5rem", background: S.rust, border: "none", color: "white", fontFamily: S.mono, fontSize: "0.62rem", letterSpacing: "0.08em", textTransform: "uppercase", padding: "0.5rem 1.25rem", cursor: "pointer" }}
+          >
+            {saving === "blocks" ? "Saving…" : saved === "blocks" ? "Saved" : "Save content"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── MembersPage ──────────────────────────────────────────────────────────────
 
-type Tab = "members" | "links" | "packet";
+type Tab = "members" | "links" | "packet" | "website";
 
 export default function MembersPage() {
   const { principal } = useAuthStore();
@@ -425,6 +605,7 @@ export default function MembersPage() {
     { key: "members", label: "Members" },
     { key: "links",   label: "Share Links" },
     { key: "packet",  label: "Welcome Packet" },
+    { key: "website", label: "Website" },
   ];
 
   return (
@@ -496,6 +677,12 @@ export default function MembersPage() {
         isBoard
           ? <WelcomePacketForm />
           : <p style={{ fontFamily: S.sans, fontSize: "0.88rem", color: S.inkLight }}>Welcome packet configuration is available to board members only.</p>
+      )}
+
+      {tab === "website" && (
+        isBoard
+          ? <WebsiteSettingsPanel />
+          : <p style={{ fontFamily: S.sans, fontSize: "0.88rem", color: S.inkLight }}>Website configuration is available to board members only.</p>
       )}
     </div>
   );
