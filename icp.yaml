@@ -104,6 +104,13 @@ canisters:
         main: backend/marketplace/main.mo
         args: ""
 
+  - name: benefit
+    recipe:
+      type: "@dfinity/motoko@v4.0.0"
+      configuration:
+        main: backend/benefit/main.mo
+        args: ""
+
   - name: frontend
     recipe:
       type: "@dfinity/asset-canister@v2.1.0"

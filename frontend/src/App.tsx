@@ -18,7 +18,9 @@ import VendorsPage       from "@/pages/VendorsPage";
 import DiscussionsPage  from "@/pages/DiscussionsPage";
 import AmenitiesPage    from "@/pages/AmenitiesPage";
 import MarketplacePage  from "@/pages/MarketplacePage";
-import ElectionsPage    from "@/pages/ElectionsPage";
+import ElectionsPage       from "@/pages/ElectionsPage";
+import MemberBenefitsPage  from "@/pages/MemberBenefitsPage";
+import PWAInstallBanner     from "@/components/PWAInstallBanner";
 
 const S = {
   paper:    "#F9F6F0",
@@ -45,6 +47,7 @@ const NAV_TABS = [
   { to: "/amenities",    label: "Amenities"     },
   { to: "/marketplace",  label: "Marketplace"   },
   { to: "/elections",    label: "Elections"     },
+  { to: "/benefits",     label: "Benefits"      },
 ] as const;
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
@@ -103,6 +106,7 @@ function AppShell() {
         </header>
       )}
 
+      <PWAInstallBanner />
       <main style={{ flex: 1, padding: isAuthenticated ? "2.5rem 2rem" : "0", maxWidth: isAuthenticated ? 960 : "none", margin: "0 auto", width: "100%" }}>
         {!isLoading && (
           <Routes>
@@ -124,6 +128,7 @@ function AppShell() {
             <Route path="/amenities"     element={<ProtectedRoute><AmenitiesPage /></ProtectedRoute>} />
             <Route path="/marketplace"   element={<ProtectedRoute><MarketplacePage /></ProtectedRoute>} />
             <Route path="/elections"     element={<ProtectedRoute><ElectionsPage /></ProtectedRoute>} />
+            <Route path="/benefits"      element={<ProtectedRoute><MemberBenefitsPage /></ProtectedRoute>} />
             <Route path="*"              element={<Navigate to="/" replace />} />
           </Routes>
         )}

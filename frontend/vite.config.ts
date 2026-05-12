@@ -1,9 +1,53 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
+import { VitePWA } from "vite-plugin-pwa";
 import { resolve } from "path";
 
 export default defineConfig({
-  plugins: [react()],
+  plugins: [
+    react(),
+    VitePWA({
+      registerType: "autoUpdate",
+      includeAssets: ["icon.svg"],
+      manifest: {
+        name: "Quorum — HOA Governance",
+        short_name: "Quorum",
+        description: "On-chain HOA governance: proposals, treasury, documents, and more.",
+        theme_color: "#1B2D4F",
+        background_color: "#F9F6F0",
+        display: "standalone",
+        start_url: "/",
+        icons: [
+          { src: "icon.svg", sizes: "any", type: "image/svg+xml" },
+          { src: "icon.svg", sizes: "any", type: "image/svg+xml", purpose: "maskable" },
+        ],
+      },
+      workbox: {
+        globPatterns: ["**/*.{js,css,html,svg,woff2}"],
+        navigateFallback: "/index.html",
+        navigateFallbackDenylist: [/^\/api/],
+        runtimeCaching: [
+          {
+            urlPattern: /^https:\/\/fonts\.googleapis\.com\/.*/i,
+            handler: "CacheFirst",
+            options: {
+              cacheName: "google-fonts-cache",
+              expiration: { maxEntries: 10, maxAgeSeconds: 60 * 60 * 24 * 365 },
+              cacheableResponse: { statuses: [0, 200] },
+            },
+          },
+          {
+            urlPattern: /^\/api\/.*/i,
+            handler: "NetworkFirst",
+            options: {
+              cacheName: "api-cache",
+              networkTimeoutSeconds: 10,
+            },
+          },
+        ],
+      },
+    }),
+  ],
   resolve: {
     alias: { "@": resolve(__dirname, "src") },
   },
@@ -24,6 +68,7 @@ export default defineConfig({
     CANISTER_ID_DISCUSSIONS:   JSON.stringify(process.env.CANISTER_ID_DISCUSSIONS   || ""),
     CANISTER_ID_AMENITIES:     JSON.stringify(process.env.CANISTER_ID_AMENITIES     || ""),
     CANISTER_ID_MARKETPLACE:   JSON.stringify(process.env.CANISTER_ID_MARKETPLACE   || ""),
+    CANISTER_ID_BENEFIT:       JSON.stringify(process.env.CANISTER_ID_BENEFIT       || ""),
   },
   server: {
     port: 5173,
