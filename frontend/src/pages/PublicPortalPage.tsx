@@ -15,7 +15,7 @@ const S = {
 
 function formatDate(ns: bigint): string {
   return new Date(Number(ns / 1_000_000n)).toLocaleDateString("en-US", {
-    year: "month", month: "long", day: "numeric",
+    year: "numeric", month: "long", day: "numeric",
   });
 }
 

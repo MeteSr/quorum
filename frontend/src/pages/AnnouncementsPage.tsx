@@ -76,7 +76,7 @@ export default function AnnouncementsPage() {
     setPosting(true);
     setPostError(null);
     try {
-      const result = await post(title, body, priority, []);
+      const result = await post(title, body, priority, { Members: null }, []);
       if ("ok" in result) {
         setNotices((n) => [result.ok, ...n]);
         setShowPost(false);
