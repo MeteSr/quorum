@@ -59,14 +59,75 @@ export function idlFactory({ IDL }: { IDL: any }) {
   });
 
   const Error = IDL.Variant({
-    NotFound:       IDL.Null,
-    NotAuthorized:  IDL.Null,
-    InvalidInput:   IDL.Text,
-    DeadlinePassed: IDL.Null,
-    AlreadyVoted:   IDL.Null,
-    NotOpen:        IDL.Null,
-    AlreadyClosed:  IDL.Null,
+    NotFound:        IDL.Null,
+    NotAuthorized:   IDL.Null,
+    InvalidInput:    IDL.Text,
+    DeadlinePassed:  IDL.Null,
+    AlreadyVoted:    IDL.Null,
+    NotOpen:         IDL.Null,
+    AlreadyClosed:   IDL.Null,
+    ElectionNotOver: IDL.Null,
+    AlreadyNominated:IDL.Null,
   });
+
+  const ElectionType   = IDL.Variant({ BoardSeat: IDL.Null, ByLawAmendment: IDL.Null, SpecialAssessment: IDL.Null });
+  const ElectionStatus = IDL.Variant({ Active: IDL.Null, Certified: IDL.Null, Cancelled: IDL.Null });
+
+  const Election = IDL.Record({
+    id:                 IDL.Text,
+    title:              IDL.Text,
+    electionType:       ElectionType,
+    nominationDeadline: IDL.Int,
+    votingOpen:         IDL.Int,
+    votingClose:        IDL.Int,
+    quorumPercent:      IDL.Nat,
+    seats:              IDL.Opt(IDL.Nat),
+    totalEligibleUnits: IDL.Nat,
+    status:             ElectionStatus,
+    createdBy:          IDL.Principal,
+    createdAt:          IDL.Int,
+  });
+
+  const Nomination = IDL.Record({
+    id:          IDL.Text,
+    electionId:  IDL.Text,
+    candidate:   IDL.Principal,
+    nominatedBy: IDL.Principal,
+    bio:         IDL.Text,
+    photoHash:   IDL.Opt(IDL.Text),
+    createdAt:   IDL.Int,
+  });
+
+  const BallotChoice = IDL.Variant({
+    Candidates: IDL.Vec(IDL.Principal),
+    YeaNay:     IDL.Bool,
+  });
+
+  const Ballot = IDL.Record({
+    id:         IDL.Text,
+    electionId: IDL.Text,
+    voter:      IDL.Principal,
+    choice:     BallotChoice,
+    castAt:     IDL.Int,
+  });
+
+  const CandidateTally = IDL.Record({ candidate: IDL.Principal, votes: IDL.Nat });
+
+  const ElectionResult = IDL.Record({
+    electionId:    IDL.Text,
+    yeaVotes:      IDL.Nat,
+    nayVotes:      IDL.Nat,
+    tallies:       IDL.Vec(CandidateTally),
+    totalBallots:  IDL.Nat,
+    quorumReached: IDL.Bool,
+    passed:        IDL.Bool,
+    certifiedAt:   IDL.Int,
+  });
+
+  const ResultElection       = IDL.Variant({ ok: Election,       err: Error });
+  const ResultNomination     = IDL.Variant({ ok: Nomination,     err: Error });
+  const ResultBallot         = IDL.Variant({ ok: Ballot,         err: Error });
+  const ResultElectionResult = IDL.Variant({ ok: ElectionResult, err: Error });
 
   const ResultProposal = IDL.Variant({ ok: Proposal, err: Error });
   const ResultVote     = IDL.Variant({ ok: Vote,     err: Error });
@@ -74,6 +135,20 @@ export function idlFactory({ IDL }: { IDL: any }) {
 
   return IDL.Service({
     setMembersCanisterId: IDL.Func([IDL.Text],                              [],               []),
+    // Election methods
+    createElection:    IDL.Func([IDL.Text, ElectionType, IDL.Int, IDL.Int, IDL.Int, IDL.Nat, IDL.Nat, IDL.Opt(IDL.Nat)], [ResultElection],       []),
+    nominateSelf:      IDL.Func([IDL.Text, IDL.Text, IDL.Opt(IDL.Text)],                                                 [ResultNomination],     []),
+    nominateOwner:     IDL.Func([IDL.Text, IDL.Principal, IDL.Text],                                                     [ResultNomination],     []),
+    castBallot:        IDL.Func([IDL.Text, BallotChoice],                                                                [ResultBallot],         []),
+    certifyResults:    IDL.Func([IDL.Text],                                                                              [ResultElectionResult], []),
+    cancelElection:    IDL.Func([IDL.Text],                                                                              [ResultElection],       []),
+    getElection:       IDL.Func([IDL.Text],             [IDL.Opt(Election)],      ["query"]),
+    getAllElections:   IDL.Func([],                     [IDL.Vec(Election)],      ["query"]),
+    getActiveElections:IDL.Func([],                     [IDL.Vec(Election)],      ["query"]),
+    getNominations:    IDL.Func([IDL.Text],             [IDL.Vec(Nomination)],    ["query"]),
+    getElectionResult: IDL.Func([IDL.Text],             [IDL.Opt(ElectionResult)],["query"]),
+    getBallots:        IDL.Func([IDL.Text],             [IDL.Opt(IDL.Vec(Ballot))],["query"]),
+    hasVoted:          IDL.Func([IDL.Text, IDL.Principal],[IDL.Bool],             ["query"]),
     createProposal:       IDL.Func([IDL.Text, IDL.Text, IDL.Int, IDL.Nat], [ResultProposal], []),
     openProposal:         IDL.Func([IDL.Text],                              [ResultProposal], []),
     castVote:             IDL.Func([IDL.Text, VoteChoice],                  [ResultVote],     []),
@@ -144,7 +219,67 @@ export type GovernanceError =
   | { DeadlinePassed: null }
   | { AlreadyVoted: null }
   | { NotOpen: null }
-  | { AlreadyClosed: null };
+  | { AlreadyClosed: null }
+  | { ElectionNotOver: null }
+  | { AlreadyNominated: null };
+
+// ─── Election Types ────────────────────────────────────────────────────────
+
+export type ElectionType   = { BoardSeat: null } | { ByLawAmendment: null } | { SpecialAssessment: null };
+export type ElectionStatus = { Active: null } | { Certified: null } | { Cancelled: null };
+
+export interface Election {
+  id:                 string;
+  title:              string;
+  electionType:       ElectionType;
+  nominationDeadline: bigint;
+  votingOpen:         bigint;
+  votingClose:        bigint;
+  quorumPercent:      bigint;
+  seats:              [] | [bigint];
+  totalEligibleUnits: bigint;
+  status:             ElectionStatus;
+  createdBy:          import("@dfinity/principal").Principal;
+  createdAt:          bigint;
+}
+
+export interface Nomination {
+  id:          string;
+  electionId:  string;
+  candidate:   import("@dfinity/principal").Principal;
+  nominatedBy: import("@dfinity/principal").Principal;
+  bio:         string;
+  photoHash:   [] | [string];
+  createdAt:   bigint;
+}
+
+export type BallotChoice =
+  | { Candidates: import("@dfinity/principal").Principal[] }
+  | { YeaNay: boolean };
+
+export interface Ballot {
+  id:         string;
+  electionId: string;
+  voter:      import("@dfinity/principal").Principal;
+  choice:     BallotChoice;
+  castAt:     bigint;
+}
+
+export interface CandidateTally {
+  candidate: import("@dfinity/principal").Principal;
+  votes:     bigint;
+}
+
+export interface ElectionResult {
+  electionId:    string;
+  yeaVotes:      bigint;
+  nayVotes:      bigint;
+  tallies:       CandidateTally[];
+  totalBallots:  bigint;
+  quorumReached: boolean;
+  passed:        boolean;
+  certifiedAt:   bigint;
+}
 
 // ─── Actor ────────────────────────────────────────────────────────────────────
 
@@ -225,4 +360,97 @@ export async function closePoll(
   const actor = await createActor() as any;
   if (!actor) return { err: { NotFound: null } };
   return actor.closePoll(pollId);
+}
+
+// ─── Election service ─────────────────────────────────────────────────────
+
+export async function getAllElections(): Promise<Election[]> {
+  const actor = await createActor() as any;
+  if (!actor) return [];
+  return actor.getAllElections();
+}
+
+export async function getActiveElections(): Promise<Election[]> {
+  const actor = await createActor() as any;
+  if (!actor) return [];
+  return actor.getActiveElections();
+}
+
+export async function createElection(
+  title: string,
+  electionType: ElectionType,
+  nominationDeadline: bigint,
+  votingOpen: bigint,
+  votingClose: bigint,
+  quorumPercent: bigint,
+  totalEligibleUnits: bigint,
+  seats: [] | [bigint]
+): Promise<{ ok: Election } | { err: GovernanceError }> {
+  const actor = await createActor() as any;
+  if (!actor) return { err: { NotFound: null } };
+  return actor.createElection(title, electionType, nominationDeadline, votingOpen, votingClose, quorumPercent, totalEligibleUnits, seats);
+}
+
+export async function nominateSelf(
+  electionId: string,
+  bio: string,
+  photoHash: [] | [string]
+): Promise<{ ok: Nomination } | { err: GovernanceError }> {
+  const actor = await createActor() as any;
+  if (!actor) return { err: { NotFound: null } };
+  return actor.nominateSelf(electionId, bio, photoHash);
+}
+
+export async function castBallot(
+  electionId: string,
+  choice: BallotChoice
+): Promise<{ ok: Ballot } | { err: GovernanceError }> {
+  const actor = await createActor() as any;
+  if (!actor) return { err: { NotFound: null } };
+  return actor.castBallot(electionId, choice);
+}
+
+export async function certifyResults(
+  electionId: string
+): Promise<{ ok: ElectionResult } | { err: GovernanceError }> {
+  const actor = await createActor() as any;
+  if (!actor) return { err: { NotFound: null } };
+  return actor.certifyResults(electionId);
+}
+
+export async function cancelElection(
+  electionId: string
+): Promise<{ ok: Election } | { err: GovernanceError }> {
+  const actor = await createActor() as any;
+  if (!actor) return { err: { NotFound: null } };
+  return actor.cancelElection(electionId);
+}
+
+export async function getNominations(electionId: string): Promise<Nomination[]> {
+  const actor = await createActor() as any;
+  if (!actor) return [];
+  return actor.getNominations(electionId);
+}
+
+export async function getElectionResult(electionId: string): Promise<ElectionResult | null> {
+  const actor = await createActor() as any;
+  if (!actor) return null;
+  const result: [] | [ElectionResult] = await actor.getElectionResult(electionId);
+  return result.length > 0 ? result[0]! : null;
+}
+
+export async function getBallots(electionId: string): Promise<Ballot[] | null> {
+  const actor = await createActor() as any;
+  if (!actor) return null;
+  const result: [] | [Ballot[]] = await actor.getBallots(electionId);
+  return result.length > 0 ? result[0]! : null;
+}
+
+export async function hasVoted(
+  electionId: string,
+  voter: import("@dfinity/principal").Principal
+): Promise<boolean> {
+  const actor = await createActor() as any;
+  if (!actor) return false;
+  return actor.hasVoted(electionId, voter);
 }

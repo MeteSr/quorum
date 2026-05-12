@@ -20,6 +20,16 @@ import {
   closePoll,
   getOpenPolls,
   getAllPolls,
+  getAllElections,
+  getActiveElections,
+  createElection,
+  nominateSelf,
+  castBallot,
+  certifyResults,
+  cancelElection,
+  getNominations,
+  getElectionResult,
+  getBallots,
 } from "@/services/governance";
 
 const MOCK_PROPOSAL = {
@@ -58,6 +68,50 @@ const MOCK_POLL = {
   createdAt: BigInt(1_700_000_000_000_000_000),
 };
 
+const MOCK_ELECTION = {
+  id:                 "ELEC_1",
+  title:              "Board Election 2026",
+  electionType:       { BoardSeat: null },
+  nominationDeadline: BigInt(1_800_000_000_000_000_000),
+  votingOpen:         BigInt(1_810_000_000_000_000_000),
+  votingClose:        BigInt(1_820_000_000_000_000_000),
+  quorumPercent:      BigInt(10),
+  seats:              [BigInt(3)] as [bigint],
+  totalEligibleUnits: BigInt(100),
+  status:             { Active: null },
+  createdBy:          { toText: () => "board-principal" } as any,
+  createdAt:          BigInt(1_700_000_000_000_000_000),
+};
+
+const MOCK_NOMINATION = {
+  id:          "NOM_1",
+  electionId:  "ELEC_1",
+  candidate:   { toText: () => "candidate-principal" } as any,
+  nominatedBy: { toText: () => "candidate-principal" } as any,
+  bio:         "10 years in HOA management.",
+  photoHash:   [] as [],
+  createdAt:   BigInt(1_701_000_000_000_000_000),
+};
+
+const MOCK_BALLOT = {
+  id:         "BALLOT_1",
+  electionId: "ELEC_1",
+  voter:      { toText: () => "voter-principal" } as any,
+  choice:     { Candidates: [{ toText: () => "candidate-principal" } as any] },
+  castAt:     BigInt(1_815_000_000_000_000_000),
+};
+
+const MOCK_RESULT = {
+  electionId:    "ELEC_1",
+  yeaVotes:      BigInt(0),
+  nayVotes:      BigInt(0),
+  tallies:       [{ candidate: { toText: () => "candidate-principal" } as any, votes: BigInt(12) }],
+  totalBallots:  BigInt(12),
+  quorumReached: true,
+  passed:        true,
+  certifiedAt:   BigInt(1_821_000_000_000_000_000),
+};
+
 function makeMockActor(overrides: Record<string, any> = {}) {
   return {
     getOpenProposals: vi.fn().mockResolvedValue([MOCK_PROPOSAL]),
@@ -69,6 +123,17 @@ function makeMockActor(overrides: Record<string, any> = {}) {
     closePoll:        vi.fn().mockResolvedValue({ ok: { ...MOCK_POLL, status: { Closed: null } } }),
     getOpenPolls:     vi.fn().mockResolvedValue([MOCK_POLL]),
     getAllPolls:       vi.fn().mockResolvedValue([MOCK_POLL]),
+    getAllElections:    vi.fn().mockResolvedValue([MOCK_ELECTION]),
+    getActiveElections:vi.fn().mockResolvedValue([MOCK_ELECTION]),
+    createElection:    vi.fn().mockResolvedValue({ ok: MOCK_ELECTION }),
+    nominateSelf:      vi.fn().mockResolvedValue({ ok: MOCK_NOMINATION }),
+    castBallot:        vi.fn().mockResolvedValue({ ok: MOCK_BALLOT }),
+    certifyResults:    vi.fn().mockResolvedValue({ ok: MOCK_RESULT }),
+    cancelElection:    vi.fn().mockResolvedValue({ ok: { ...MOCK_ELECTION, status: { Cancelled: null } } }),
+    getNominations:    vi.fn().mockResolvedValue([MOCK_NOMINATION]),
+    getElectionResult: vi.fn().mockResolvedValue([MOCK_RESULT]),
+    getBallots:        vi.fn().mockResolvedValue([[MOCK_BALLOT]]),
+    hasVoted:          vi.fn().mockResolvedValue(false),
     ...overrides,
   };
 }
@@ -244,5 +309,192 @@ describe("governance service — closePoll", () => {
     );
     const result = await closePoll("POLL_1");
     expect((result as any).err).toHaveProperty("AlreadyClosed");
+  });
+});
+
+// ─── Election tests ───────────────────────────────────────────────────────────
+
+describe("governance service — getAllElections / getActiveElections", () => {
+  beforeEach(() => vi.mocked(Actor.createActor).mockReturnValue(makeMockActor() as any));
+
+  it("getAllElections returns all elections", async () => {
+    const elections = await getAllElections();
+    expect(elections).toHaveLength(1);
+    expect(elections[0].title).toBe("Board Election 2026");
+  });
+
+  it("getActiveElections returns only active elections", async () => {
+    const elections = await getActiveElections();
+    expect(elections).toHaveLength(1);
+    expect(elections[0].status).toEqual({ Active: null });
+  });
+
+  it("returns empty array when no elections exist", async () => {
+    vi.mocked(Actor.createActor).mockReturnValue(
+      makeMockActor({ getAllElections: vi.fn().mockResolvedValue([]) }) as any
+    );
+    expect(await getAllElections()).toEqual([]);
+  });
+});
+
+describe("governance service — createElection", () => {
+  beforeEach(() => vi.mocked(Actor.createActor).mockReturnValue(makeMockActor() as any));
+
+  it("returns ok with created election", async () => {
+    const result = await createElection(
+      "Board Election 2026",
+      { BoardSeat: null },
+      BigInt(1_800_000_000_000_000_000),
+      BigInt(1_810_000_000_000_000_000),
+      BigInt(1_820_000_000_000_000_000),
+      BigInt(10),
+      BigInt(100),
+      [BigInt(3)]
+    );
+    expect(result).toHaveProperty("ok");
+    expect((result as any).ok.title).toBe("Board Election 2026");
+  });
+
+  it("returns err for invalid input", async () => {
+    vi.mocked(Actor.createActor).mockReturnValue(
+      makeMockActor({ createElection: vi.fn().mockResolvedValue({ err: { InvalidInput: "title required" } }) }) as any
+    );
+    const result = await createElection("", { BoardSeat: null }, 0n, 0n, 0n, 10n, 100n, [3n]);
+    expect((result as any).err).toHaveProperty("InvalidInput");
+  });
+});
+
+describe("governance service — nominateSelf", () => {
+  beforeEach(() => vi.mocked(Actor.createActor).mockReturnValue(makeMockActor() as any));
+
+  it("returns ok with nomination", async () => {
+    const result = await nominateSelf("ELEC_1", "10 years in HOA management.", []);
+    expect(result).toHaveProperty("ok");
+    expect((result as any).ok.bio).toBe("10 years in HOA management.");
+  });
+
+  it("returns err when already nominated", async () => {
+    vi.mocked(Actor.createActor).mockReturnValue(
+      makeMockActor({ nominateSelf: vi.fn().mockResolvedValue({ err: { AlreadyNominated: null } }) }) as any
+    );
+    const result = await nominateSelf("ELEC_1", "Bio.", []);
+    expect((result as any).err).toHaveProperty("AlreadyNominated");
+  });
+
+  it("returns err when nomination window has closed", async () => {
+    vi.mocked(Actor.createActor).mockReturnValue(
+      makeMockActor({ nominateSelf: vi.fn().mockResolvedValue({ err: { InvalidInput: "nomination window has closed" } }) }) as any
+    );
+    const result = await nominateSelf("ELEC_1", "Bio.", []);
+    expect((result as any).err).toHaveProperty("InvalidInput");
+  });
+});
+
+describe("governance service — castBallot", () => {
+  beforeEach(() => vi.mocked(Actor.createActor).mockReturnValue(makeMockActor() as any));
+
+  it("returns ok for a candidates ballot", async () => {
+    const result = await castBallot("ELEC_1", { Candidates: [] });
+    expect(result).toHaveProperty("ok");
+  });
+
+  it("returns ok for a yea/nay ballot", async () => {
+    vi.mocked(Actor.createActor).mockReturnValue(
+      makeMockActor({ castBallot: vi.fn().mockResolvedValue({ ok: { ...MOCK_BALLOT, choice: { YeaNay: true } } }) }) as any
+    );
+    const result = await castBallot("ELEC_1", { YeaNay: true });
+    expect(result).toHaveProperty("ok");
+    expect((result as any).ok.choice).toEqual({ YeaNay: true });
+  });
+
+  it("returns err when already voted", async () => {
+    vi.mocked(Actor.createActor).mockReturnValue(
+      makeMockActor({ castBallot: vi.fn().mockResolvedValue({ err: { AlreadyVoted: null } }) }) as any
+    );
+    const result = await castBallot("ELEC_1", { Candidates: [] });
+    expect((result as any).err).toHaveProperty("AlreadyVoted");
+  });
+
+  it("returns err when voting window has closed", async () => {
+    vi.mocked(Actor.createActor).mockReturnValue(
+      makeMockActor({ castBallot: vi.fn().mockResolvedValue({ err: { InvalidInput: "voting window has closed" } }) }) as any
+    );
+    const result = await castBallot("ELEC_1", { Candidates: [] });
+    expect((result as any).err).toHaveProperty("InvalidInput");
+  });
+});
+
+describe("governance service — certifyResults", () => {
+  beforeEach(() => vi.mocked(Actor.createActor).mockReturnValue(makeMockActor() as any));
+
+  it("returns ok with certified election result", async () => {
+    const result = await certifyResults("ELEC_1");
+    expect(result).toHaveProperty("ok");
+    expect((result as any).ok.passed).toBe(true);
+    expect((result as any).ok.quorumReached).toBe(true);
+  });
+
+  it("returns err when election is not over", async () => {
+    vi.mocked(Actor.createActor).mockReturnValue(
+      makeMockActor({ certifyResults: vi.fn().mockResolvedValue({ err: { ElectionNotOver: null } }) }) as any
+    );
+    const result = await certifyResults("ELEC_1");
+    expect((result as any).err).toHaveProperty("ElectionNotOver");
+  });
+});
+
+describe("governance service — cancelElection", () => {
+  beforeEach(() => vi.mocked(Actor.createActor).mockReturnValue(makeMockActor() as any));
+
+  it("returns ok with cancelled election", async () => {
+    const result = await cancelElection("ELEC_1");
+    expect(result).toHaveProperty("ok");
+    expect((result as any).ok.status).toEqual({ Cancelled: null });
+  });
+
+  it("returns err when caller did not create the election", async () => {
+    vi.mocked(Actor.createActor).mockReturnValue(
+      makeMockActor({ cancelElection: vi.fn().mockResolvedValue({ err: { NotAuthorized: null } }) }) as any
+    );
+    const result = await cancelElection("ELEC_1");
+    expect((result as any).err).toHaveProperty("NotAuthorized");
+  });
+});
+
+describe("governance service — getNominations / getElectionResult / getBallots", () => {
+  beforeEach(() => vi.mocked(Actor.createActor).mockReturnValue(makeMockActor() as any));
+
+  it("getNominations returns nominations for an election", async () => {
+    const noms = await getNominations("ELEC_1");
+    expect(noms).toHaveLength(1);
+    expect(noms[0].bio).toBe("10 years in HOA management.");
+  });
+
+  it("getElectionResult returns result when certified", async () => {
+    const result = await getElectionResult("ELEC_1");
+    expect(result).not.toBeNull();
+    expect(result!.passed).toBe(true);
+  });
+
+  it("getElectionResult returns null when no result exists", async () => {
+    vi.mocked(Actor.createActor).mockReturnValue(
+      makeMockActor({ getElectionResult: vi.fn().mockResolvedValue([]) }) as any
+    );
+    const result = await getElectionResult("ELEC_1");
+    expect(result).toBeNull();
+  });
+
+  it("getBallots returns null during voting phase (secret ballot)", async () => {
+    vi.mocked(Actor.createActor).mockReturnValue(
+      makeMockActor({ getBallots: vi.fn().mockResolvedValue([]) }) as any
+    );
+    const result = await getBallots("ELEC_1");
+    expect(result).toBeNull();
+  });
+
+  it("getBallots returns ballots after voting has closed", async () => {
+    const result = await getBallots("ELEC_1");
+    expect(result).not.toBeNull();
+    expect(result).toHaveLength(1);
   });
 });
