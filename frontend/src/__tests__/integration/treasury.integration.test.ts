@@ -288,6 +288,91 @@ describe.skipIf(!deployed)("metrics() — aggregate counters", () => {
     expect(typeof m.outstandingCount).toBe("bigint");
     expect(typeof m.lateFeeCount).toBe("bigint");
     expect(typeof m.remindersSent).toBe("bigint");
+    expect(typeof m.delinquentCount).toBe("bigint");
     expect(m.totalAssessments).toBeGreaterThan(BigInt(0));
+  });
+});
+
+// ─── Collections workflow (#28) ───────────────────────────────────────────────
+
+describe.skipIf(!deployed)("collections workflow (#28)", () => {
+  const COL_UNIT = `col-unit-${RUN_ID}`;
+
+  it("openCollectionCase returns GracePeriod record", async () => {
+    const a = await getActor();
+    const result = await a.openCollectionCase(COL_UNIT, "Integration test case") as any;
+    if ("err" in result) throw new Error(JSON.stringify(result.err));
+    expect(result.ok.unitId).toBe(COL_UNIT);
+    expect(result.ok.stage).toHaveProperty("GracePeriod");
+    expect(typeof result.ok.totalOverdueCents).toBe("bigint");
+  });
+
+  it("openCollectionCase returns InvalidInput when case already open", async () => {
+    const a = await getActor();
+    const result = await a.openCollectionCase(COL_UNIT, "Duplicate open") as any;
+    expect(result).toHaveProperty("err");
+    expect(result.err).toHaveProperty("InvalidInput");
+  });
+
+  it("getDelinquentUnits includes the opened case", async () => {
+    const a = await getActor();
+    const units = await a.getDelinquentUnits() as any[];
+    expect(Array.isArray(units)).toBe(true);
+    const found = units.find((r: any) => r.unitId === COL_UNIT);
+    expect(found).toBeDefined();
+    expect(found.stage).toHaveProperty("GracePeriod");
+  });
+
+  it("getCollectionRecord returns the opened case", async () => {
+    const a = await getActor();
+    const result = await a.getCollectionRecord(COL_UNIT) as any;
+    expect(result.length).toBe(1);
+    expect(result[0].unitId).toBe(COL_UNIT);
+  });
+
+  it("getCollectionHistory has one opening event", async () => {
+    const a = await getActor();
+    const history = await a.getCollectionHistory(COL_UNIT) as any[];
+    expect(history.length).toBe(1);
+    expect(history[0].toStage).toHaveProperty("GracePeriod");
+  });
+
+  it("escalateCollection advances stage to FirstNotice", async () => {
+    const a = await getActor();
+    const result = await a.escalateCollection(COL_UNIT, { FirstNotice: null }, "Demand letter sent via certified mail") as any;
+    if ("err" in result) throw new Error(JSON.stringify(result.err));
+    expect(result.ok.stage).toHaveProperty("FirstNotice");
+  });
+
+  it("escalateCollection on unknown unit returns NotFound", async () => {
+    const a = await getActor();
+    const result = await a.escalateCollection(`no-such-unit-${RUN_ID}`, { FirstNotice: null }, "test") as any;
+    expect(result).toHaveProperty("err");
+    expect(result.err).toHaveProperty("NotFound");
+  });
+
+  it("getCollectionHistory has two events after escalation", async () => {
+    const a = await getActor();
+    const history = await a.getCollectionHistory(COL_UNIT) as any[];
+    expect(history.length).toBe(2);
+    const escalateEvt = history.find((e: any) => "FirstNotice" in e.toStage);
+    expect(escalateEvt).toBeDefined();
+    expect(escalateEvt.note).toBe("Demand letter sent via certified mail");
+  });
+
+  it("resolveCollection sets stage to Resolved and removes from getDelinquentUnits", async () => {
+    const a = await getActor();
+    const result = await a.resolveCollection(COL_UNIT, "Paid in full") as any;
+    if ("err" in result) throw new Error(JSON.stringify(result.err));
+    const units = await a.getDelinquentUnits() as any[];
+    const found = units.find((r: any) => r.unitId === COL_UNIT);
+    expect(found).toBeUndefined();
+  });
+
+  it("resolveCollection on unknown unit returns NotFound", async () => {
+    const a = await getActor();
+    const result = await a.resolveCollection(`no-such-${RUN_ID}`, "test") as any;
+    expect(result).toHaveProperty("err");
+    expect(result.err).toHaveProperty("NotFound");
   });
 });

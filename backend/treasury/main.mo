@@ -145,6 +145,42 @@ persistent actor Treasury {
     generatedAt:      Time.Time;
   };
 
+  public type CollectionStage = {
+    #GracePeriod;
+    #FirstNotice;
+    #SecondNotice;
+    #PreLien;
+    #Lien;
+    #Resolved;
+  };
+
+  // Stored shape (minimal — computed fields derived at query time)
+  type CollectionCase = {
+    unitId:        Text;
+    stage:         CollectionStage;
+    openedAt:      Time.Time;
+    lastUpdatedAt: Time.Time;
+  };
+
+  public type DelinquencyRecord = {
+    unitId:            Text;
+    stage:             CollectionStage;
+    totalOverdueCents: Nat;
+    oldestDueDateNs:   Time.Time;
+    openedAt:          Time.Time;
+    lastUpdatedAt:     Time.Time;
+  };
+
+  public type CollectionEvent = {
+    id:        Text;
+    unitId:    Text;
+    fromStage: CollectionStage;
+    toStage:   CollectionStage;
+    note:      Text;
+    createdAt: Time.Time;
+    createdBy: Principal;
+  };
+
   // ─── IC HTTP Outcall interface ────────────────────────────────────────────────
 
   public type HttpHeader   = { name : Text; value : Text };
@@ -192,6 +228,10 @@ persistent actor Treasury {
   private let budgetLines        = Map.empty<Text, BudgetLine>();  // key: year#category
   private var reserveFundBalance : Nat = 0;
 
+  private let collectionCases  = Map.empty<Text, CollectionCase>();   // keyed by unitId
+  private let collectionEvents = Map.empty<Text, CollectionEvent>();  // keyed by event id
+  private var collEvtCounter   : Nat = 0;
+
   // Resets on upgrade — safe, idempotency keys prevent double-work
   transient var lastScanDayNs : Int = 0;
 
@@ -214,6 +254,11 @@ persistent actor Treasury {
   private func nextRemId() : Text {
     remCounter += 1;
     "REM_" # Nat.toText(remCounter)
+  };
+
+  private func nextEvtId() : Text {
+    collEvtCounter += 1;
+    "EVT_" # Nat.toText(collEvtCounter)
   };
 
   // ─── Stripe helpers ──────────────────────────────────────────────────────────
@@ -609,6 +654,126 @@ persistent actor Treasury {
     { unitId; year; payments = unitPays; totalBilledCents = totalBilled; totalPaidCents = totalPaid; outstandingCents = outstandingC; generatedAt = Time.now() }
   };
 
+  // ─── Collections (#28) ───────────────────────────────────────────────────────
+
+  private func computeDelinquency(c : CollectionCase) : DelinquencyRecord {
+    var totalOverdue : Nat = 0;
+    var oldest : Time.Time = 0;
+    var found = false;
+    for (a in Map.values(assessments)) {
+      if (a.unitId == c.unitId and a.status == #Outstanding) {
+        totalOverdue += a.amountCents;
+        if (not found or a.dueDate < oldest) {
+          oldest := a.dueDate;
+          found := true;
+        };
+      };
+    };
+    {
+      unitId            = c.unitId;
+      stage             = c.stage;
+      totalOverdueCents = totalOverdue;
+      oldestDueDateNs   = if (found) oldest else Time.now();
+      openedAt          = c.openedAt;
+      lastUpdatedAt     = c.lastUpdatedAt;
+    }
+  };
+
+  public shared(msg) func openCollectionCase(unitId : Text, note : Text) : async Result.Result<DelinquencyRecord, Error> {
+    let now = Time.now();
+    switch (Map.get(collectionCases, Text.compare, unitId)) {
+      case (?c) {
+        if (c.stage != #Resolved) return #err(#InvalidInput("Collection case already open"));
+      };
+      case null {};
+    };
+    let c : CollectionCase = {
+      unitId;
+      stage         = #GracePeriod;
+      openedAt      = now;
+      lastUpdatedAt = now;
+    };
+    let evt : CollectionEvent = {
+      id        = nextEvtId();
+      unitId;
+      fromStage = #GracePeriod;
+      toStage   = #GracePeriod;
+      note;
+      createdAt = now;
+      createdBy = msg.caller;
+    };
+    Map.add(collectionCases,  Text.compare, unitId, c);
+    Map.add(collectionEvents, Text.compare, evt.id, evt);
+    #ok(computeDelinquency(c))
+  };
+
+  public shared(msg) func escalateCollection(unitId : Text, newStage : CollectionStage, note : Text) : async Result.Result<DelinquencyRecord, Error> {
+    switch (Map.get(collectionCases, Text.compare, unitId)) {
+      case null  { #err(#NotFound) };
+      case (?c)  {
+        if (c.stage == #Resolved) return #err(#InvalidInput("Collection case is already resolved"));
+        let now = Time.now();
+        let evt : CollectionEvent = {
+          id        = nextEvtId();
+          unitId;
+          fromStage = c.stage;
+          toStage   = newStage;
+          note;
+          createdAt = now;
+          createdBy = msg.caller;
+        };
+        let updated : CollectionCase = { c with stage = newStage; lastUpdatedAt = now };
+        Map.add(collectionCases,  Text.compare, unitId, updated);
+        Map.add(collectionEvents, Text.compare, evt.id, evt);
+        #ok(computeDelinquency(updated))
+      };
+    }
+  };
+
+  public shared(msg) func resolveCollection(unitId : Text, note : Text) : async Result.Result<(), Error> {
+    switch (Map.get(collectionCases, Text.compare, unitId)) {
+      case null  { #err(#NotFound) };
+      case (?c)  {
+        let now = Time.now();
+        let evt : CollectionEvent = {
+          id        = nextEvtId();
+          unitId;
+          fromStage = c.stage;
+          toStage   = #Resolved;
+          note;
+          createdAt = now;
+          createdBy = msg.caller;
+        };
+        let resolved : CollectionCase = { c with stage = #Resolved; lastUpdatedAt = now };
+        Map.add(collectionCases,  Text.compare, unitId, resolved);
+        Map.add(collectionEvents, Text.compare, evt.id, evt);
+        #ok(())
+      };
+    }
+  };
+
+  public query func getDelinquentUnits() : async [DelinquencyRecord] {
+    let active = Array.filter<CollectionCase>(
+      Array.fromIter(Map.values(collectionCases)),
+      func(c : CollectionCase) : Bool { c.stage != #Resolved }
+    );
+    Array.map<CollectionCase, DelinquencyRecord>(active, func(c : CollectionCase) : DelinquencyRecord { computeDelinquency(c) })
+  };
+
+  public query func getCollectionRecord(unitId : Text) : async ?DelinquencyRecord {
+    switch (Map.get(collectionCases, Text.compare, unitId)) {
+      case null  { null };
+      case (?c)  { ?computeDelinquency(c) };
+    }
+  };
+
+  public query func getCollectionHistory(unitId : Text) : async [CollectionEvent] {
+    Array.filter<CollectionEvent>(
+      Array.fromIter(Map.values(collectionEvents)),
+      func(e : CollectionEvent) : Bool { e.unitId == unitId }
+    )
+  };
+
   // ─── Queries ─────────────────────────────────────────────────────────────────
 
   public query func getAssessment(id : Text) : async ?Assessment {
@@ -647,6 +812,7 @@ persistent actor Treasury {
     platformFeeCents: Nat;
     lateFeeCount:     Nat;
     remindersSent:    Nat;
+    delinquentCount:  Nat;
   } {
     var outstandingCount = 0;
     var outstandingCents = 0;
@@ -658,11 +824,15 @@ persistent actor Treasury {
       };
       switch (a.kind) { case (#LateFee) { lateFeeCount += 1 }; case _ {} };
     };
-    var totalPaid   = 0;
-    var platformFee = 0;
+    var totalPaid        = 0;
+    var platformFee      = 0;
     for (p in Map.values(duesPayments)) {
       totalPaid   += p.amountCents;
       platformFee += p.platformFeeCents;
+    };
+    var delinquentCount  = 0;
+    for (c in Map.values(collectionCases)) {
+      if (c.stage != #Resolved) { delinquentCount += 1 };
     };
     {
       totalAssessments = Map.size(assessments);
@@ -672,6 +842,7 @@ persistent actor Treasury {
       platformFeeCents = platformFee;
       lateFeeCount;
       remindersSent    = Map.size(reminderLog);
+      delinquentCount;
     }
   };
 
@@ -750,6 +921,26 @@ persistent actor Treasury {
           };
         };
       };
+    };
+
+    // ── Collections (#28) — auto-open GracePeriod records ────────────────────
+    switch (lateFeePolicy) {
+      case (?policy) {
+        let graceNs     : Nat = policy.gracePeriodDays * DAY_NS;
+        let graceCutoff : Int = now - graceNs;
+        for (a in outstanding.vals()) {
+          if (a.dueDate < graceCutoff and
+              Option.isNull(Map.get(collectionCases, Text.compare, a.unitId))) {
+            Map.add(collectionCases, Text.compare, a.unitId, {
+              unitId        = a.unitId;
+              stage         = #GracePeriod;
+              openedAt      = now;
+              lastUpdatedAt = now;
+            });
+          };
+        };
+      };
+      case null {};
     };
 
     // ── Reminders (#32) ───────────────────────────────────────────────────────

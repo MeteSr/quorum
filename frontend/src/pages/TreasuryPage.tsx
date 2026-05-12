@@ -7,8 +7,10 @@ import {
   getPaymentHistory, getReminderLog,
   getAgingReport, getReserveFundReport, getBudgetVsActual, getIncomeStatement, getAnnualStatement,
   setReserveFundBalance, setBudgetLine,
+  getDelinquentUnits, getCollectionHistory, openCollectionCase, escalateCollection, resolveCollection,
   type Assessment, type LateFeePolicy, type ReminderPolicy, type DuesPayment, type ReminderLog,
   type AgingReport, type ReserveFundReport, type BudgetVsActual, type IncomeStatement, type AnnualStatement,
+  type DelinquencyRecord, type CollectionEvent, type CollectionStage,
 } from "@/services/treasury";
 import { getMyProfile } from "@/services/members";
 
@@ -581,6 +583,248 @@ function AnnualStatementDownload({ unitId }: { unitId: string }) {
   );
 }
 
+// ─── Collections panel (#28) ─────────────────────────────────────────────────
+
+const STAGES: Array<{ key: string; label: string }> = [
+  { key: "GracePeriod",  label: "Grace Period"   },
+  { key: "FirstNotice",  label: "First Notice"   },
+  { key: "SecondNotice", label: "Second Notice"  },
+  { key: "PreLien",      label: "Pre-Lien"       },
+  { key: "Lien",         label: "Lien"           },
+];
+
+function stageColor(stage: CollectionStage): string {
+  if ("GracePeriod"  in stage) return S.amber;
+  if ("FirstNotice"  in stage) return S.rust;
+  if ("SecondNotice" in stage) return S.rust;
+  if ("PreLien"      in stage) return S.navy;
+  if ("Lien"         in stage) return "#6B0000";
+  if ("Resolved"     in stage) return S.sage;
+  return S.inkLight;
+}
+
+function stageLabel(stage: CollectionStage): string {
+  const key = Object.keys(stage)[0];
+  return key.replace(/([A-Z])/g, " $1").trim();
+}
+
+function CollectionsPanel() {
+  const [records,        setRecords       ] = useState<DelinquencyRecord[]>([]);
+  const [loading,        setLoading       ] = useState(true);
+  const [expandedUnit,   setExpandedUnit  ] = useState<string | null>(null);
+  const [history,        setHistory       ] = useState<CollectionEvent[]>([]);
+  const [histLoading,    setHistLoading   ] = useState(false);
+  const [escalating,     setEscalating    ] = useState<string | null>(null);
+  const [openingUnit,    setOpeningUnit   ] = useState<string | null>(null);
+  const [newUnitId,      setNewUnitId     ] = useState("");
+  const [selectedStage,  setSelectedStage ] = useState<Record<string, string>>({});
+  const [note,           setNote          ] = useState<Record<string, string>>({});
+  const [error,          setError         ] = useState<string | null>(null);
+
+  useEffect(() => {
+    getDelinquentUnits()
+      .then(setRecords)
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
+
+  async function handleExpand(unitId: string) {
+    if (expandedUnit === unitId) { setExpandedUnit(null); return; }
+    setExpandedUnit(unitId);
+    setHistLoading(true);
+    const h = await getCollectionHistory(unitId).catch(() => []);
+    setHistory(h);
+    setHistLoading(false);
+  }
+
+  async function handleOpen() {
+    if (!newUnitId.trim()) return;
+    setOpeningUnit(newUnitId);
+    setError(null);
+    const res = await openCollectionCase(newUnitId.trim(), "Opened by board");
+    if ("err" in res) {
+      setError("InvalidInput" in res.err ? res.err.InvalidInput : "Error opening case");
+    } else {
+      setRecords((prev) => [...prev.filter((r) => r.unitId !== res.ok.unitId), res.ok]);
+      setNewUnitId("");
+    }
+    setOpeningUnit(null);
+  }
+
+  async function handleEscalate(unitId: string) {
+    const stage = selectedStage[unitId];
+    if (!stage) return;
+    setEscalating(unitId);
+    const stageVariant = { [stage]: null } as CollectionStage;
+    const res = await escalateCollection(unitId, stageVariant, note[unitId] ?? "");
+    if ("ok" in res) {
+      setRecords((prev) => prev.map((r) => r.unitId === unitId ? res.ok : r));
+      setSelectedStage((p) => ({ ...p, [unitId]: "" }));
+      setNote((p) => ({ ...p, [unitId]: "" }));
+      if (expandedUnit === unitId) {
+        const h = await getCollectionHistory(unitId).catch(() => []);
+        setHistory(h);
+      }
+    }
+    setEscalating(null);
+  }
+
+  async function handleResolve(unitId: string) {
+    const res = await resolveCollection(unitId, note[unitId] ?? "Resolved by board");
+    if ("ok" in res) {
+      setRecords((prev) => prev.filter((r) => r.unitId !== unitId));
+      if (expandedUnit === unitId) setExpandedUnit(null);
+    }
+  }
+
+  const fieldStyle: React.CSSProperties = {
+    fontFamily: S.mono, fontSize: "0.75rem", border: `1px solid ${S.rule}`,
+    padding: "0.3rem 0.5rem", background: "#fff", color: S.ink,
+  };
+  const labelStyle: React.CSSProperties = {
+    fontFamily: S.mono, fontSize: "0.58rem", letterSpacing: "0.08em",
+    color: S.inkLight, textTransform: "uppercase", display: "block", marginBottom: "0.3rem",
+  };
+
+  return (
+    <div>
+      {/* Open new case */}
+      <div style={{ border: `1px solid ${S.rule}`, padding: "1.25rem 1.5rem", background: "#fff", marginBottom: "1.5rem", display: "flex", gap: "0.75rem", alignItems: "flex-end" }}>
+        <div style={{ flex: 1 }}>
+          <label style={labelStyle}>Open collection case for unit</label>
+          <input
+            value={newUnitId}
+            onChange={(e) => setNewUnitId(e.target.value)}
+            placeholder="e.g. 12A"
+            style={{ ...fieldStyle, width: "100%" }}
+          />
+        </div>
+        <button
+          onClick={handleOpen}
+          disabled={!!openingUnit || !newUnitId.trim()}
+          style={{
+            background: S.navy, color: "#fff", border: "none", fontFamily: S.mono,
+            fontSize: "0.6rem", letterSpacing: "0.1em", textTransform: "uppercase",
+            padding: "0.45rem 1.25rem", cursor: "pointer", opacity: openingUnit ? 0.6 : 1,
+          }}
+        >
+          {openingUnit ? "Opening…" : "Open Case"}
+        </button>
+      </div>
+      {error && <div style={{ color: S.rust, fontFamily: S.mono, fontSize: "0.6rem", marginBottom: "1rem" }}>{error}</div>}
+
+      {loading ? (
+        <p style={{ fontFamily: S.sans, color: S.inkLight }}>Loading collection cases…</p>
+      ) : records.length === 0 ? (
+        <div style={{ padding: "3rem", border: `1px dashed ${S.rule}`, textAlign: "center", color: S.inkLight, fontFamily: S.mono, fontSize: "0.75rem", letterSpacing: "0.08em" }}>
+          NO ACTIVE COLLECTION CASES
+        </div>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+          {records.map((r) => (
+            <div key={r.unitId} style={{ border: `1px solid ${S.rule}`, background: "#fff" }}>
+              {/* Row header */}
+              <div
+                style={{ padding: "1rem 1.5rem", display: "flex", alignItems: "center", gap: "1rem", cursor: "pointer" }}
+                onClick={() => handleExpand(r.unitId)}
+              >
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontFamily: S.mono, fontSize: "0.6rem", letterSpacing: "0.08em", color: stageColor(r.stage), textTransform: "uppercase", marginBottom: "0.2rem" }}>
+                    {stageLabel(r.stage)}
+                  </div>
+                  <div style={{ fontFamily: S.sans, fontSize: "0.9rem", fontWeight: 500 }}>Unit {r.unitId}</div>
+                  <div style={{ fontFamily: S.mono, fontSize: "0.55rem", color: S.inkLight, marginTop: "0.15rem" }}>
+                    Opened {new Date(Number(r.openedAt) / 1_000_000).toLocaleDateString()}
+                  </div>
+                </div>
+                <div style={{ textAlign: "right" }}>
+                  <div style={{ fontFamily: S.serif, fontWeight: 700, fontSize: "1.1rem", color: S.rust }}>{centsToDisplay(r.totalOverdueCents)}</div>
+                  <div style={{ fontFamily: S.mono, fontSize: "0.55rem", color: S.inkLight }}>overdue</div>
+                </div>
+                <div style={{ fontFamily: S.mono, fontSize: "0.7rem", color: S.inkLight }}>
+                  {expandedUnit === r.unitId ? "▲" : "▼"}
+                </div>
+              </div>
+
+              {/* Expanded detail */}
+              {expandedUnit === r.unitId && (
+                <div style={{ borderTop: `1px solid ${S.rule}`, padding: "1rem 1.5rem" }}>
+                  {/* Escalate controls */}
+                  <div style={{ display: "flex", gap: "0.75rem", alignItems: "flex-end", marginBottom: "1rem" }}>
+                    <div>
+                      <label style={labelStyle}>Escalate to stage</label>
+                      <select
+                        value={selectedStage[r.unitId] ?? ""}
+                        onChange={(e) => setSelectedStage((p) => ({ ...p, [r.unitId]: e.target.value }))}
+                        style={{ ...fieldStyle, minWidth: 140 }}
+                      >
+                        <option value="">— select —</option>
+                        {STAGES.map((s) => <option key={s.key} value={s.key}>{s.label}</option>)}
+                      </select>
+                    </div>
+                    <div style={{ flex: 1 }}>
+                      <label style={labelStyle}>Note</label>
+                      <input
+                        value={note[r.unitId] ?? ""}
+                        onChange={(e) => setNote((p) => ({ ...p, [r.unitId]: e.target.value }))}
+                        placeholder="e.g. Demand letter sent via certified mail"
+                        style={{ ...fieldStyle, width: "100%" }}
+                      />
+                    </div>
+                    <button
+                      onClick={() => handleEscalate(r.unitId)}
+                      disabled={escalating === r.unitId || !selectedStage[r.unitId]}
+                      style={{
+                        background: S.rust, color: "#fff", border: "none", fontFamily: S.mono,
+                        fontSize: "0.6rem", letterSpacing: "0.08em", textTransform: "uppercase",
+                        padding: "0.4rem 1rem", cursor: "pointer", opacity: escalating === r.unitId ? 0.6 : 1,
+                      }}
+                    >
+                      {escalating === r.unitId ? "Saving…" : "Escalate"}
+                    </button>
+                    <button
+                      onClick={() => handleResolve(r.unitId)}
+                      style={{
+                        background: S.sage, color: "#fff", border: "none", fontFamily: S.mono,
+                        fontSize: "0.6rem", letterSpacing: "0.08em", textTransform: "uppercase",
+                        padding: "0.4rem 1rem", cursor: "pointer",
+                      }}
+                    >
+                      Resolve
+                    </button>
+                  </div>
+
+                  {/* History */}
+                  <div style={{ fontFamily: S.mono, fontSize: "0.58rem", letterSpacing: "0.08em", color: S.inkLight, textTransform: "uppercase", marginBottom: "0.5rem" }}>
+                    Collection History
+                  </div>
+                  {histLoading ? (
+                    <p style={{ fontFamily: S.sans, fontSize: "0.8rem", color: S.inkLight }}>Loading…</p>
+                  ) : history.length === 0 ? (
+                    <p style={{ fontFamily: S.mono, fontSize: "0.65rem", color: S.inkLight }}>No history yet.</p>
+                  ) : (
+                    <div style={{ display: "flex", flexDirection: "column", gap: "0.35rem" }}>
+                      {history.map((evt) => (
+                        <div key={evt.id} style={{ display: "flex", gap: "1rem", fontFamily: S.mono, fontSize: "0.6rem", color: S.inkLight }}>
+                          <span style={{ minWidth: 90 }}>{new Date(Number(evt.createdAt) / 1_000_000).toLocaleDateString()}</span>
+                          <span style={{ color: stageColor(evt.fromStage) }}>{stageLabel(evt.fromStage)}</span>
+                          <span>→</span>
+                          <span style={{ color: stageColor(evt.toStage) }}>{stageLabel(evt.toStage)}</span>
+                          {evt.note && <span style={{ color: S.ink, fontFamily: S.sans, fontSize: "0.75rem" }}>{evt.note}</span>}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Main page ────────────────────────────────────────────────────────────────
 
 export default function TreasuryPage() {
@@ -590,7 +834,7 @@ export default function TreasuryPage() {
   const [totalOutstanding, setTotalOutstanding] = useState<bigint | null>(null);
   const [loading,          setLoading]          = useState(true);
   const [unitId,           setUnitId]           = useState<string | null>(null);
-  const [activeTab,        setActiveTab]        = useState<"assessments" | "history" | "reminders" | "reports">("assessments");
+  const [activeTab,        setActiveTab]        = useState<"assessments" | "history" | "reminders" | "reports" | "collections">("assessments");
 
   function reload(uid: string) {
     Promise.all([
@@ -657,10 +901,11 @@ export default function TreasuryPage() {
 
       {/* Tabs */}
       <div style={{ borderBottom: `1px solid ${S.rule}`, marginBottom: "1.5rem" }}>
-        <button style={tabStyle(activeTab === "assessments")} onClick={() => setActiveTab("assessments")}>Assessments</button>
-        <button style={tabStyle(activeTab === "history")}     onClick={() => setActiveTab("history")}>Payment History</button>
-        <button style={tabStyle(activeTab === "reminders")}   onClick={() => setActiveTab("reminders")}>Reminder Log</button>
-        <button style={tabStyle(activeTab === "reports")}     onClick={() => setActiveTab("reports")}>Reports</button>
+        <button style={tabStyle(activeTab === "assessments")}  onClick={() => setActiveTab("assessments")}>Assessments</button>
+        <button style={tabStyle(activeTab === "history")}      onClick={() => setActiveTab("history")}>Payment History</button>
+        <button style={tabStyle(activeTab === "reminders")}    onClick={() => setActiveTab("reminders")}>Reminder Log</button>
+        <button style={tabStyle(activeTab === "reports")}      onClick={() => setActiveTab("reports")}>Reports</button>
+        <button style={tabStyle(activeTab === "collections")}  onClick={() => setActiveTab("collections")}>Collections</button>
       </div>
 
       {/* Assessments tab */}
@@ -761,6 +1006,9 @@ export default function TreasuryPage() {
           {unitId && <AnnualStatementDownload unitId={unitId} />}
         </>
       )}
+
+      {/* Collections tab */}
+      {activeTab === "collections" && <CollectionsPanel />}
 
       {/* Board policy panel */}
       <PolicyPanel />

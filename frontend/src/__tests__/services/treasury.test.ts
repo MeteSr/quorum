@@ -31,6 +31,12 @@ import {
   getAnnualStatement,
   setReserveFundBalance,
   setBudgetLine,
+  getDelinquentUnits,
+  getCollectionRecord,
+  getCollectionHistory,
+  openCollectionCase,
+  escalateCollection,
+  resolveCollection,
 } from "@/services/treasury";
 
 const MOCK_ASSESSMENT = {
@@ -109,6 +115,25 @@ const MOCK_ANNUAL_STATEMENT = {
   generatedAt:      BigInt(1_735_689_600_000_000_000),
 };
 
+const MOCK_DELINQUENCY = {
+  unitId:            "12A",
+  stage:             { GracePeriod: null },
+  totalOverdueCents: BigInt(15000),
+  oldestDueDateNs:   BigInt(1_743_000_000_000_000_000),
+  openedAt:          BigInt(1_746_000_000_000_000_000),
+  lastUpdatedAt:     BigInt(1_746_000_000_000_000_000),
+};
+
+const MOCK_COLLECTION_EVENT = {
+  id:        "EVT_1",
+  unitId:    "12A",
+  fromStage: { GracePeriod: null },
+  toStage:   { FirstNotice: null },
+  note:      "First demand letter sent",
+  createdAt: BigInt(1_746_000_000_000_000_000),
+  createdBy: { toText: () => "board-principal" } as any,
+};
+
 function makeMockActor(overrides: Record<string, any> = {}) {
   return {
     getOutstandingAssessments: vi.fn().mockResolvedValue([MOCK_ASSESSMENT]),
@@ -132,6 +157,12 @@ function makeMockActor(overrides: Record<string, any> = {}) {
     getAnnualStatement:        vi.fn().mockResolvedValue(MOCK_ANNUAL_STATEMENT),
     setReserveFundBalance:     vi.fn().mockResolvedValue(undefined),
     setBudgetLine:             vi.fn().mockResolvedValue(undefined),
+    getDelinquentUnits:        vi.fn().mockResolvedValue([MOCK_DELINQUENCY]),
+    getCollectionRecord:       vi.fn().mockResolvedValue([MOCK_DELINQUENCY]),
+    getCollectionHistory:      vi.fn().mockResolvedValue([MOCK_COLLECTION_EVENT]),
+    openCollectionCase:        vi.fn().mockResolvedValue({ ok: MOCK_DELINQUENCY }),
+    escalateCollection:        vi.fn().mockResolvedValue({ ok: { ...MOCK_DELINQUENCY, stage: { FirstNotice: null } } }),
+    resolveCollection:         vi.fn().mockResolvedValue({ ok: null }),
     ...overrides,
   };
 }
@@ -414,5 +445,79 @@ describe("treasury service — annual statement (#41)", () => {
     const result = await fn("12A", 2025);
     expect(result).toBeNull();
     (process.env as any).CANISTER_ID_TREASURY = "rdmx6-jaaaa-aaaah-test-cai";
+  });
+});
+
+describe("treasury service — collections workflow (#28)", () => {
+  beforeEach(() => vi.mocked(Actor.createActor).mockReturnValue(makeMockActor() as any));
+
+  it("getDelinquentUnits returns array of DelinquencyRecord", async () => {
+    const records = await getDelinquentUnits();
+    expect(records).toHaveLength(1);
+    expect(records[0].unitId).toBe("12A");
+    expect(typeof records[0].totalOverdueCents).toBe("bigint");
+    expect(records[0].stage).toEqual({ GracePeriod: null });
+  });
+
+  it("getCollectionRecord unwraps Opt and returns single record", async () => {
+    const rec = await getCollectionRecord("12A");
+    expect(rec).not.toBeNull();
+    expect(rec!.unitId).toBe("12A");
+  });
+
+  it("getCollectionRecord returns null when canister not deployed", async () => {
+    (process.env as any).CANISTER_ID_TREASURY = "";
+    vi.resetModules();
+    const { getCollectionRecord: fn } = await import("@/services/treasury");
+    const result = await fn("12A");
+    expect(result).toBeNull();
+    (process.env as any).CANISTER_ID_TREASURY = "rdmx6-jaaaa-aaaah-test-cai";
+  });
+
+  it("getCollectionHistory returns events with stage transitions", async () => {
+    const history = await getCollectionHistory("12A");
+    expect(history).toHaveLength(1);
+    expect(history[0].fromStage).toEqual({ GracePeriod: null });
+    expect(history[0].toStage).toEqual({ FirstNotice: null });
+    expect(history[0].note).toBe("First demand letter sent");
+  });
+
+  it("openCollectionCase passes unitId and note to actor", async () => {
+    const spy = vi.fn().mockResolvedValue({ ok: MOCK_DELINQUENCY });
+    vi.mocked(Actor.createActor).mockReturnValue(makeMockActor({ openCollectionCase: spy }) as any);
+    await openCollectionCase("12A", "Board opened case");
+    expect(spy).toHaveBeenCalledWith("12A", "Board opened case");
+  });
+
+  it("openCollectionCase returns ok with GracePeriod stage", async () => {
+    const result = await openCollectionCase("12A", "Board opened case");
+    expect(result).toHaveProperty("ok");
+    expect((result as any).ok.stage).toEqual({ GracePeriod: null });
+  });
+
+  it("escalateCollection passes unitId, stage variant, and note", async () => {
+    const spy = vi.fn().mockResolvedValue({ ok: { ...MOCK_DELINQUENCY, stage: { FirstNotice: null } } });
+    vi.mocked(Actor.createActor).mockReturnValue(makeMockActor({ escalateCollection: spy }) as any);
+    await escalateCollection("12A", { FirstNotice: null }, "Demand letter sent");
+    expect(spy).toHaveBeenCalledWith("12A", { FirstNotice: null }, "Demand letter sent");
+  });
+
+  it("escalateCollection returns ok with updated stage", async () => {
+    const result = await escalateCollection("12A", { FirstNotice: null }, "Letter sent");
+    expect(result).toHaveProperty("ok");
+    expect((result as any).ok.stage).toEqual({ FirstNotice: null });
+  });
+
+  it("resolveCollection calls actor with unitId and note", async () => {
+    const spy = vi.fn().mockResolvedValue({ ok: null });
+    vi.mocked(Actor.createActor).mockReturnValue(makeMockActor({ resolveCollection: spy }) as any);
+    await resolveCollection("12A", "Paid in full");
+    expect(spy).toHaveBeenCalledWith("12A", "Paid in full");
+  });
+
+  it("resolveCollection returns ok null on success", async () => {
+    const result = await resolveCollection("12A", "Paid in full");
+    expect(result).toHaveProperty("ok");
+    expect((result as any).ok).toBeNull();
   });
 });
