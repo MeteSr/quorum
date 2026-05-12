@@ -12,14 +12,25 @@
 
 import { describe, it, expect, beforeAll } from "vitest";
 import { Actor } from "@icp-sdk/core/agent";
+import { Principal } from "@dfinity/principal";
 import { idlFactory } from "@/services/amenities";
-import { getAgent } from "@/services/actor";
+import { loginWithLocalIdentity, getAgent } from "@/services/actor";
 
 const CANISTER_ID = (process.env as any).CANISTER_ID_AMENITIES || "";
 const deployed = !!CANISTER_ID;
 
 const RUN_ID  = Date.now();
 const TEST_DATE = "2099-07-04";  // far future to avoid conflicts between runs
+
+// Set up a fixed Ed25519 identity once for all integration tests so that
+// the agent is non-anonymous and setAdmin/createAmenity calls are authorised.
+let TEST_PRINCIPAL_TEXT = "";
+
+beforeAll(async () => {
+  if (deployed) {
+    TEST_PRINCIPAL_TEXT = await loginWithLocalIdentity();
+  }
+});
 
 async function getActor() {
   return Actor.createActor(idlFactory, { agent: await getAgent(), canisterId: CANISTER_ID });
@@ -29,13 +40,9 @@ async function getActor() {
 
 describe.skipIf(!deployed)("setup — setAdmin", () => {
   it("sets admin without error (idempotent on first call)", async () => {
+    if (!TEST_PRINCIPAL_TEXT) return;
     const a = await getActor() as any;
-    const agent = await getAgent();
-    const principal = (agent as any).getPrincipal
-      ? (agent as any).getPrincipal()
-      : (agent as any)._identity?.getPrincipal();
-    if (!principal) return; // anonymous agent — skip
-    const result = await a.setAdmin(principal) as any;
+    const result = await a.setAdmin(Principal.fromText(TEST_PRINCIPAL_TEXT)) as any;
     // Either ok or NotAuthorized (already set to a different principal) is fine.
     expect("ok" in result || "err" in result).toBe(true);
   });
