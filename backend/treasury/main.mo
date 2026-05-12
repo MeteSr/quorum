@@ -7,7 +7,6 @@
 
 import Array     "mo:core/Array";
 import Blob      "mo:core/Blob";
-import Buffer    "mo:core/Buffer";
 import Iter      "mo:core/Iter";
 import Map       "mo:core/Map";
 import Nat       "mo:core/Nat";
@@ -498,31 +497,26 @@ persistent actor Treasury {
   // ─── Reporting queries (#15 + #41) ───────────────────────────────────────────
 
   public query func getAgingReport() : async AgingReport {
-    let now    = Time.now();
-    let day30  : Int = 30 * DAY_NS;
-    let day60  : Int = 60 * DAY_NS;
-    let day90  : Int = 90 * DAY_NS;
-    let currentBuf = Buffer.Buffer<AgingBucket>(4);
-    let d31_60Buf  = Buffer.Buffer<AgingBucket>(4);
-    let d61_90Buf  = Buffer.Buffer<AgingBucket>(4);
-    let d90plusBuf = Buffer.Buffer<AgingBucket>(4);
-    var total      : Nat = 0;
-    for (a in Map.values(assessments)) {
-      if (a.status == #Outstanding) {
-        let overdue : Int = now - a.dueDate;
-        let b : AgingBucket = { unitId = a.unitId; amountCents = a.amountCents };
-        total += a.amountCents;
-        if      (overdue < day30) { currentBuf.add(b) }
-        else if (overdue < day60) { d31_60Buf.add(b) }
-        else if (overdue < day90) { d61_90Buf.add(b) }
-        else                      { d90plusBuf.add(b) };
-      };
-    };
+    let now   = Time.now();
+    let day30 : Int = 30 * DAY_NS;
+    let day60 : Int = 60 * DAY_NS;
+    let day90 : Int = 90 * DAY_NS;
+    let os = Array.filter(
+      Array.fromIter(Map.values(assessments)),
+      func(a : Assessment) : Bool { a.status == #Outstanding }
+    );
+    var total : Nat = 0;
+    for (a in os.vals()) { total += a.amountCents };
+    let toBucket = func(a : Assessment) : AgingBucket = { unitId = a.unitId; amountCents = a.amountCents };
     {
-      current    = Buffer.toArray(currentBuf);
-      days31_60  = Buffer.toArray(d31_60Buf);
-      days61_90  = Buffer.toArray(d61_90Buf);
-      days90plus = Buffer.toArray(d90plusBuf);
+      current    = Array.map(Array.filter(os, func(a : Assessment) : Bool {
+                     now - a.dueDate < day30 }), toBucket);
+      days31_60  = Array.map(Array.filter(os, func(a : Assessment) : Bool {
+                     let od = now - a.dueDate; od >= day30 and od < day60 }), toBucket);
+      days61_90  = Array.map(Array.filter(os, func(a : Assessment) : Bool {
+                     let od = now - a.dueDate; od >= day60 and od < day90 }), toBucket);
+      days90plus = Array.map(Array.filter(os, func(a : Assessment) : Bool {
+                     now - a.dueDate >= day90 }), toBucket);
       totalOutstandingCents = total;
     }
   };
