@@ -20,6 +20,7 @@ import { idlFactory as vendorsIdl }       from "../../services/vendors";
 import { idlFactory as discussionsIdl }  from "../../services/discussions";
 import { idlFactory as amenitiesIdl }    from "../../services/amenities";
 import { idlFactory as marketplaceIdl } from "../../services/marketplace";
+import { idlFactory as benefitIdl }     from "../../services/benefit";
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
 
@@ -1013,6 +1014,46 @@ describe("marketplace IDL factory", () => {
   });
 
   test("metrics is a query with 0 args", () => {
+    const m = methods.get("metrics")!;
+    expect(m.isQuery).toBe(true);
+    expect(m.argTypes).toHaveLength(0);
+  });
+});
+
+// ─── Benefit ──────────────────────────────────────────────────────────────────
+
+describe("benefit IDL factory", () => {
+  let methods: ReturnType<typeof extractService>;
+  beforeAll(() => { methods = extractService(benefitIdl); });
+
+  test("exposes all expected methods", () => {
+    expect([...methods.keys()].sort()).toEqual([
+      "generateCoupon",
+      "getCoupon",
+      "metrics",
+      "redeemCoupon",
+    ]);
+  });
+
+  test("generateCoupon is an update call with 0 args", () => {
+    const m = methods.get("generateCoupon")!;
+    expect(m.isQuery).toBe(false);
+    expect(m.argTypes).toHaveLength(0);
+  });
+
+  test("getCoupon is an update call with 0 args", () => {
+    const m = methods.get("getCoupon")!;
+    expect(m.isQuery).toBe(false);
+    expect(m.argTypes).toHaveLength(0);
+  });
+
+  test("redeemCoupon is an update call with 1 text arg", () => {
+    const m = methods.get("redeemCoupon")!;
+    expect(m.isQuery).toBe(false);
+    expect(m.argTypes).toHaveLength(1);
+  });
+
+  test("benefit metrics is a query with 0 args", () => {
     const m = methods.get("metrics")!;
     expect(m.isQuery).toBe(true);
     expect(m.argTypes).toHaveLength(0);

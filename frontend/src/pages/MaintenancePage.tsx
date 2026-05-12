@@ -51,6 +51,36 @@ function statusInfo(s: RequestStatus) {
   return STATUS_STEPS.find((x) => Object.keys(x.value)[0] === key) ?? STATUS_STEPS[0];
 }
 
+async function compressImage(file: File, maxBytes = 500_000): Promise<string> {
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement("canvas");
+        const maxDim = 1200;
+        let { width, height } = img;
+        if (width > maxDim || height > maxDim) {
+          const ratio = Math.min(maxDim / width, maxDim / height);
+          width  = Math.round(width  * ratio);
+          height = Math.round(height * ratio);
+        }
+        canvas.width = width; canvas.height = height;
+        canvas.getContext("2d")!.drawImage(img, 0, 0, width, height);
+        let quality = 0.82;
+        let dataUrl = canvas.toDataURL("image/jpeg", quality);
+        while (dataUrl.length > maxBytes * 1.37 && quality > 0.15) {
+          quality -= 0.1;
+          dataUrl = canvas.toDataURL("image/jpeg", quality);
+        }
+        resolve(dataUrl);
+      };
+      img.src = e.target!.result as string;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
 const inputStyle: React.CSSProperties = {
   width: "100%", padding: "0.5rem 0.75rem",
   border: `1px solid ${S.rule}`,
@@ -69,6 +99,8 @@ export default function MaintenancePage() {
   const [submitting,  setSubmitting]  = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [activeTab,  setActiveTab]  = useState<"mine" | "all">("mine");
+  const [photos,     setPhotos]     = useState<string[]>([]);
+  const [compressing, setCompressing] = useState(false);
 
   useEffect(() => {
     const fetch = activeTab === "mine" ? getMyRequests : getAllRequests;
@@ -81,11 +113,11 @@ export default function MaintenancePage() {
     setSubmitting(true);
     setSubmitError(null);
     try {
-      const result = await submitRequest(unitId, category, description, []);
+      const result = await submitRequest(unitId, category, description, photos);
       if ("ok" in result) {
         setRequests((r) => [result.ok, ...r]);
         setShowForm(false);
-        setUnitId(""); setDescription("");
+        setUnitId(""); setDescription(""); setPhotos([]);
       } else {
         const err = result.err;
         setSubmitError("NotAuthorized" in err ? "Members only." : "InvalidInput" in err ? err.InvalidInput : "Submit failed.");
@@ -165,8 +197,55 @@ export default function MaintenancePage() {
             <label style={{ display: "block", fontFamily: S.mono, fontSize: "0.6rem", letterSpacing: "0.1em", textTransform: "uppercase" as const, color: S.inkLight, marginBottom: "0.3rem" }}>Description</label>
             <textarea style={{ ...inputStyle, minHeight: 80, resize: "vertical" }} value={description} onChange={(e) => setDescription(e.target.value)} required />
           </div>
+          <div>
+            <label style={{ display: "block", fontFamily: S.mono, fontSize: "0.6rem", letterSpacing: "0.1em", textTransform: "uppercase" as const, color: S.inkLight, marginBottom: "0.3rem" }}>
+              Photos (optional, up to 3)
+            </label>
+            <label style={{
+              display: "inline-flex", alignItems: "center", gap: "0.4rem",
+              padding: "0.5rem 0.9rem", border: `1px solid ${S.rule}`,
+              fontFamily: S.mono, fontSize: "0.62rem", letterSpacing: "0.1em",
+              textTransform: "uppercase", cursor: compressing ? "wait" : "pointer",
+              color: S.inkLight, minHeight: 44,
+            }}>
+              {compressing ? "Compressing…" : "📷 Add Photo"}
+              <input
+                type="file"
+                accept="image/*"
+                capture="environment"
+                style={{ display: "none" }}
+                disabled={photos.length >= 3 || compressing}
+                onChange={async (e) => {
+                  const file = e.target.files?.[0];
+                  if (!file) return;
+                  setCompressing(true);
+                  try {
+                    const compressed = await compressImage(file);
+                    setPhotos((p) => [...p, compressed].slice(0, 3));
+                  } finally {
+                    setCompressing(false);
+                    e.target.value = "";
+                  }
+                }}
+              />
+            </label>
+            {photos.length > 0 && (
+              <div style={{ display: "flex", gap: "0.5rem", marginTop: "0.5rem", flexWrap: "wrap" }}>
+                {photos.map((src, i) => (
+                  <div key={i} style={{ position: "relative" }}>
+                    <img src={src} alt="" style={{ width: 64, height: 64, objectFit: "cover", border: `1px solid ${S.rule}` }} />
+                    <button
+                      type="button"
+                      onClick={() => setPhotos((p) => p.filter((_, j) => j !== i))}
+                      style={{ position: "absolute", top: 0, right: 0, background: S.rust, color: "white", border: "none", width: 18, height: 18, cursor: "pointer", fontSize: "0.65rem", lineHeight: "18px", textAlign: "center" }}
+                    >×</button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
           {submitError && <p style={{ fontFamily: S.sans, fontSize: "0.8rem", color: S.rust, margin: 0 }}>{submitError}</p>}
-          <button type="submit" disabled={submitting} style={{ padding: "0.75rem", background: S.navy, color: "#fff", border: "none", fontFamily: S.mono, fontSize: "0.65rem", letterSpacing: "0.1em", textTransform: "uppercase", cursor: "pointer" }}>
+          <button type="submit" disabled={submitting || compressing} style={{ padding: "0.75rem", minHeight: 44, background: S.navy, color: "#fff", border: "none", fontFamily: S.mono, fontSize: "0.65rem", letterSpacing: "0.1em", textTransform: "uppercase", cursor: "pointer" }}>
             {submitting ? "Submitting…" : "Submit Request"}
           </button>
         </form>
