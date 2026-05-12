@@ -8,12 +8,32 @@ const CANISTER_ID_MEMBERS = (process.env as any).CANISTER_ID_MEMBERS || "";
 /* eslint-disable @typescript-eslint/no-explicit-any */
 export function idlFactory({ IDL }: { IDL: any }) {
   const Role = IDL.Variant({
-    Homeowner:       IDL.Null,
-    BoardMember:     IDL.Null,
-    BoardPresident:  IDL.Null,
-    Treasurer:       IDL.Null,
-    Secretary:       IDL.Null,
-    PropertyManager: IDL.Null,
+    Homeowner:              IDL.Null,
+    BoardMember:            IDL.Null,
+    BoardPresident:         IDL.Null,
+    Treasurer:              IDL.Null,
+    Secretary:              IDL.Null,
+    PropertyManager:        IDL.Null,
+    AssistantManager:       IDL.Null,
+    MaintenanceSupervisor:  IDL.Null,
+    Staff:                  IDL.Null,
+  });
+
+  const StaffAssignment = IDL.Record({
+    principal:        IDL.Principal,
+    role:             Role,
+    maxApprovalCents: IDL.Opt(IDL.Nat),
+    assignedBy:       IDL.Principal,
+    assignedAt:       IDL.Int,
+  });
+
+  const ApprovalLog = IDL.Record({
+    id:        IDL.Text,
+    requestId: IDL.Text,
+    action:    IDL.Variant({ Approved: IDL.Null, Rejected: IDL.Null }),
+    by:        IDL.Principal,
+    reason:    IDL.Text,
+    timestamp: IDL.Int,
   });
 
   const Member = IDL.Record({
@@ -104,6 +124,9 @@ export function idlFactory({ IDL }: { IDL: any }) {
   const ResultShareViews   = IDL.Variant({ ok: IDL.Vec(ShareViewLog), err: Error });
   const ResultWebsite      = IDL.Variant({ ok: WebsiteConfig,      err: Error });
   const ResultTokens       = IDL.Variant({ ok: IDL.Vec(IDL.Text),   err: Error });
+  const ResultStaffList    = IDL.Variant({ ok: IDL.Vec(StaffAssignment), err: Error });
+  const ResultApprovalLogs = IDL.Variant({ ok: IDL.Vec(ApprovalLog),    err: Error });
+  const ResultStaff        = IDL.Variant({ ok: StaffAssignment,         err: Error });
 
   return IDL.Service({
     initAdmin:                  IDL.Func([],                                        [ResultUnit],                    []),
@@ -138,6 +161,12 @@ export function idlFactory({ IDL }: { IDL: any }) {
     registerPushToken:          IDL.Func([IDL.Text],                                [],                              []),
     removePushToken:            IDL.Func([],                                        [],                              []),
     getPushTokens:              IDL.Func([],                                        [ResultTokens],                  []),
+    assignStaffRole:            IDL.Func([IDL.Principal, Role, IDL.Opt(IDL.Nat)],  [ResultStaff],                   []),
+    revokeStaffRole:            IDL.Func([IDL.Principal],                           [ResultUnit],                    []),
+    getStaffAssignments:        IDL.Func([],                                        [ResultStaffList],               ["query"]),
+    canApprove:                 IDL.Func([IDL.Principal, IDL.Nat],                  [IDL.Bool],                      ["query"]),
+    logApprovalAction:          IDL.Func([IDL.Text, IDL.Variant({ Approved: IDL.Null, Rejected: IDL.Null }), IDL.Text], [], []),
+    getApprovalLog:             IDL.Func([],                                        [ResultApprovalLogs],            ["query"]),
   });
 }
 
@@ -149,7 +178,27 @@ export type Role =
   | { BoardPresident: null }
   | { Treasurer: null }
   | { Secretary: null }
-  | { PropertyManager: null };
+  | { PropertyManager: null }
+  | { AssistantManager: null }
+  | { MaintenanceSupervisor: null }
+  | { Staff: null };
+
+export interface StaffAssignment {
+  principal:        import("@dfinity/principal").Principal;
+  role:             Role;
+  maxApprovalCents: [] | [bigint];
+  assignedBy:       import("@dfinity/principal").Principal;
+  assignedAt:       bigint;
+}
+
+export interface ApprovalLog {
+  id:        string;
+  requestId: string;
+  action:    { Approved: null } | { Rejected: null };
+  by:        import("@dfinity/principal").Principal;
+  reason:    string;
+  timestamp: bigint;
+}
 
 export interface Member {
   principal:   import("@dfinity/principal").Principal;
@@ -401,4 +450,45 @@ export async function getPushTokens(): Promise<{ ok: string[] } | { err: Members
   const actor = await createActor() as any;
   if (!actor) return { err: { NotAuthorized: null } };
   return actor.getPushTokens();
+}
+
+// ─── Staff Role Hierarchy (#16) ───────────────────────────────────────────────
+
+export async function assignStaffRole(
+  principal: import("@dfinity/principal").Principal,
+  role: Role,
+  maxApprovalCents: [] | [bigint]
+): Promise<{ ok: StaffAssignment } | { err: MembersError }> {
+  const actor = await createActor() as any;
+  if (!actor) return { err: { NotAuthorized: null } };
+  return actor.assignStaffRole(principal, role, maxApprovalCents);
+}
+
+export async function revokeStaffRole(
+  principal: import("@dfinity/principal").Principal
+): Promise<{ ok: null } | { err: MembersError }> {
+  const actor = await createActor() as any;
+  if (!actor) return { err: { NotAuthorized: null } };
+  return actor.revokeStaffRole(principal);
+}
+
+export async function getStaffAssignments(): Promise<{ ok: StaffAssignment[] } | { err: MembersError }> {
+  const actor = await createActor() as any;
+  if (!actor) return { ok: [] };
+  return actor.getStaffAssignments();
+}
+
+export async function canApprove(
+  principal: import("@dfinity/principal").Principal,
+  amountCents: bigint
+): Promise<boolean> {
+  const actor = await createActor() as any;
+  if (!actor) return false;
+  return actor.canApprove(principal, amountCents);
+}
+
+export async function getApprovalLog(): Promise<{ ok: ApprovalLog[] } | { err: MembersError }> {
+  const actor = await createActor() as any;
+  if (!actor) return { ok: [] };
+  return actor.getApprovalLog();
 }

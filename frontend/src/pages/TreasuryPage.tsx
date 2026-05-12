@@ -8,9 +8,11 @@ import {
   getAgingReport, getReserveFundReport, getBudgetVsActual, getIncomeStatement, getAnnualStatement,
   setReserveFundBalance, setBudgetLine,
   getDelinquentUnits, getCollectionHistory, openCollectionCase, escalateCollection, resolveCollection,
+  getQBOStatus, setQBOConfig, getQBOSyncLog, retrySync,
   type Assessment, type LateFeePolicy, type ReminderPolicy, type EmailConfig, type DuesPayment, type ReminderLog,
   type AgingReport, type ReserveFundReport, type BudgetVsActual, type IncomeStatement, type AnnualStatement,
   type DelinquencyRecord, type CollectionEvent, type CollectionStage,
+  type QBOConfig, type QBOSyncEntry,
 } from "@/services/treasury";
 import { getMyProfile } from "@/services/members";
 
@@ -880,6 +882,142 @@ function CollectionsPanel() {
   );
 }
 
+// ─── QuickBooks panel (#19) ───────────────────────────────────────────────────
+
+function QBOPanel() {
+  const [status,    setStatus   ] = useState<{ configured: boolean; realmId: string; tokenExpiry: bigint } | null>(null);
+  const [syncLog,   setSyncLog  ] = useState<QBOSyncEntry[]>([]);
+  const [saving,    setSaving   ] = useState(false);
+  const [retrying,  setRetrying ] = useState<string | null>(null);
+  const [error,     setError    ] = useState<string | null>(null);
+  const [form,      setForm     ] = useState<QBOConfig>({ realmId: "", accessToken: "", refreshToken: "", tokenExpiry: BigInt(0) });
+
+  useEffect(() => {
+    Promise.all([getQBOStatus(), getQBOSyncLog()])
+      .then(([s, log]) => { setStatus(s); setSyncLog(log); })
+      .catch(() => {});
+  }, []);
+
+  async function handleSave() {
+    if (!form.realmId || !form.accessToken) { setError("Realm ID and access token are required."); return; }
+    setSaving(true);
+    setError(null);
+    await setQBOConfig(form).catch(() => setError("Failed to save configuration."));
+    const s = await getQBOStatus().catch(() => null);
+    if (s) setStatus(s);
+    setSaving(false);
+  }
+
+  async function handleRetry(entryId: string) {
+    setRetrying(entryId);
+    setError(null);
+    const res = await retrySync(entryId);
+    if ("ok" in res) {
+      setSyncLog((prev) => prev.map((e) => e.id === entryId ? res.ok : e));
+    } else {
+      setError("InvalidInput" in res.err ? res.err.InvalidInput : "Retry failed");
+    }
+    setRetrying(null);
+  }
+
+  function syncStatusColor(e: QBOSyncEntry): string {
+    if ("Synced" in e.status) return "#2E7D32";
+    if ("Failed" in e.status) return "#C94C2E";
+    return "#7A7268";
+  }
+
+  function syncStatusLabel(e: QBOSyncEntry): string {
+    if ("Synced" in e.status) return "Synced";
+    if ("Failed" in e.status) return "Failed";
+    return "Pending";
+  }
+
+  const inputStyle = {
+    width: "100%", padding: "0.5rem 0.75rem", border: "1px solid #C8C3B8",
+    fontFamily: "'IBM Plex Mono', monospace", fontSize: "0.8rem", background: "#fff",
+  } as const;
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: "2rem" }}>
+      {/* Config form */}
+      <div style={{ border: "1px solid #C8C3B8", padding: "1.5rem" }}>
+        <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: "0.6rem", textTransform: "uppercase", letterSpacing: "0.1em", color: "#7A7268", marginBottom: "1rem" }}>
+          QuickBooks Online Connection
+          {status?.configured && (
+            <span style={{ marginLeft: "1rem", color: "#2E7D32" }}>● Connected — Realm {status.realmId}</span>
+          )}
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem", marginBottom: "0.75rem" }}>
+          <div>
+            <label style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: "0.6rem", textTransform: "uppercase", letterSpacing: "0.08em", color: "#7A7268", display: "block", marginBottom: "0.25rem" }}>Realm ID (Company ID)</label>
+            <input style={inputStyle} value={form.realmId} onChange={(e) => setForm((f) => ({ ...f, realmId: e.target.value }))} placeholder="9341453229301234" />
+          </div>
+          <div>
+            <label style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: "0.6rem", textTransform: "uppercase", letterSpacing: "0.08em", color: "#7A7268", display: "block", marginBottom: "0.25rem" }}>Access Token</label>
+            <input style={inputStyle} type="password" value={form.accessToken} onChange={(e) => setForm((f) => ({ ...f, accessToken: e.target.value }))} placeholder="eyJlbmMiOi..." />
+          </div>
+          <div>
+            <label style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: "0.6rem", textTransform: "uppercase", letterSpacing: "0.08em", color: "#7A7268", display: "block", marginBottom: "0.25rem" }}>Refresh Token</label>
+            <input style={inputStyle} type="password" value={form.refreshToken} onChange={(e) => setForm((f) => ({ ...f, refreshToken: e.target.value }))} placeholder="AB11..." />
+          </div>
+        </div>
+        {error && <p style={{ fontFamily: "'IBM Plex Sans', sans-serif", fontSize: "0.8rem", color: "#C94C2E", marginBottom: "0.5rem" }}>{error}</p>}
+        <button
+          onClick={handleSave}
+          disabled={saving}
+          style={{ padding: "0.5rem 1.25rem", background: "#1B2D4F", color: "#F4F1EB", border: "none", fontFamily: "'IBM Plex Mono', monospace", fontSize: "0.7rem", letterSpacing: "0.08em", textTransform: "uppercase", cursor: saving ? "not-allowed" : "pointer", opacity: saving ? 0.6 : 1 }}
+        >
+          {saving ? "Saving…" : "Save Configuration"}
+        </button>
+      </div>
+
+      {/* Sync log */}
+      <div>
+        <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: "0.6rem", textTransform: "uppercase", letterSpacing: "0.1em", color: "#7A7268", marginBottom: "0.75rem" }}>
+          Sync Log — {syncLog.length} entries
+        </div>
+        {syncLog.length === 0 ? (
+          <div style={{ padding: "2rem", border: "1px dashed #C8C3B8", textAlign: "center", fontFamily: "'IBM Plex Mono', monospace", fontSize: "0.7rem", color: "#7A7268" }}>
+            No payments synced yet
+          </div>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+            {syncLog.map((e) => (
+              <div key={e.id} style={{ border: "1px solid #C8C3B8", padding: "0.875rem 1rem", display: "flex", justifyContent: "space-between", alignItems: "center", gap: "1rem", background: "#fff" }}>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: "0.6rem", color: "#7A7268", letterSpacing: "0.06em", marginBottom: "0.2rem" }}>
+                    {e.id} · {e.unitId} · ${(Number(e.amountCents) / 100).toFixed(2)}
+                  </div>
+                  {e.errorMsg[0] && (
+                    <div style={{ fontFamily: "'IBM Plex Sans', sans-serif", fontSize: "0.75rem", color: "#C94C2E" }}>{e.errorMsg[0]}</div>
+                  )}
+                  {e.qboPaymentId[0] && (
+                    <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: "0.6rem", color: "#2E7D32" }}>QBO #{e.qboPaymentId[0]}</div>
+                  )}
+                </div>
+                <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
+                  <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: "0.6rem", textTransform: "uppercase", letterSpacing: "0.08em", color: syncStatusColor(e) }}>
+                    {syncStatusLabel(e)}
+                  </span>
+                  {"Failed" in e.status && (
+                    <button
+                      onClick={() => handleRetry(e.id)}
+                      disabled={retrying === e.id}
+                      style={{ padding: "0.25rem 0.75rem", border: "1px solid #C8C3B8", background: "transparent", fontFamily: "'IBM Plex Mono', monospace", fontSize: "0.6rem", letterSpacing: "0.06em", cursor: retrying === e.id ? "not-allowed" : "pointer", opacity: retrying === e.id ? 0.6 : 1 }}
+                    >
+                      {retrying === e.id ? "Retrying…" : "Retry"}
+                    </button>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ─── Main page ────────────────────────────────────────────────────────────────
 
 export default function TreasuryPage() {
@@ -889,7 +1027,7 @@ export default function TreasuryPage() {
   const [totalOutstanding, setTotalOutstanding] = useState<bigint | null>(null);
   const [loading,          setLoading]          = useState(true);
   const [unitId,           setUnitId]           = useState<string | null>(null);
-  const [activeTab,        setActiveTab]        = useState<"assessments" | "history" | "reminders" | "reports" | "collections">("assessments");
+  const [activeTab,        setActiveTab]        = useState<"assessments" | "history" | "reminders" | "reports" | "collections" | "quickbooks">("assessments");
 
   function reload(uid: string) {
     Promise.all([
@@ -961,6 +1099,7 @@ export default function TreasuryPage() {
         <button style={tabStyle(activeTab === "reminders")}    onClick={() => setActiveTab("reminders")}>Reminder Log</button>
         <button style={tabStyle(activeTab === "reports")}      onClick={() => setActiveTab("reports")}>Reports</button>
         <button style={tabStyle(activeTab === "collections")}  onClick={() => setActiveTab("collections")}>Collections</button>
+        <button style={tabStyle(activeTab === "quickbooks")}   onClick={() => setActiveTab("quickbooks")}>QuickBooks</button>
       </div>
 
       {/* Assessments tab */}
@@ -1064,6 +1203,9 @@ export default function TreasuryPage() {
 
       {/* Collections tab */}
       {activeTab === "collections" && <CollectionsPanel />}
+
+      {/* QuickBooks tab */}
+      {activeTab === "quickbooks" && <QBOPanel />}
 
       {/* Board policy panel */}
       <PolicyPanel />

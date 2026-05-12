@@ -17,11 +17,18 @@ export function idlFactory({ IDL }: { IDL: any }) {
     Other:       IDL.Null,
   });
   const RequestStatus = IDL.Variant({
-    Open:       IDL.Null,
-    Assigned:   IDL.Null,
-    InProgress: IDL.Null,
-    Resolved:   IDL.Null,
-    Closed:     IDL.Null,
+    Open:            IDL.Null,
+    PendingApproval: IDL.Null,
+    Assigned:        IDL.Null,
+    InProgress:      IDL.Null,
+    Resolved:        IDL.Null,
+    Closed:          IDL.Null,
+  });
+  const ApprovalState = IDL.Variant({
+    NotRequired: IDL.Null,
+    Pending:     IDL.Null,
+    Approved:    IDL.Record({ by: IDL.Principal, at: IDL.Int }),
+    Rejected:    IDL.Record({ by: IDL.Principal, at: IDL.Int, reason: IDL.Text }),
   });
   const AuditEntry = IDL.Record({
     status:    RequestStatus,
@@ -38,7 +45,9 @@ export function idlFactory({ IDL }: { IDL: any }) {
     submittedBy:      IDL.Principal,
     assignedVendorId: IDL.Opt(IDL.Text),
     scheduledDate:    IDL.Opt(IDL.Int),
+    estimatedCents:   IDL.Opt(IDL.Nat),
     status:           RequestStatus,
+    approvalState:    ApprovalState,
     slaWarning:       IDL.Bool,
     history:          IDL.Vec(AuditEntry),
     createdAt:        IDL.Int,
@@ -51,15 +60,20 @@ export function idlFactory({ IDL }: { IDL: any }) {
   });
   const Result = IDL.Variant({ ok: MaintenanceRequest, err: Error });
   return IDL.Service({
-    setMembersCanisterId: IDL.Func([IDL.Text], [], []),
-    submitRequest:        IDL.Func([IDL.Text, RequestCategory, IDL.Text, IDL.Vec(IDL.Text)], [Result], []),
-    assignRequest:        IDL.Func([IDL.Text, IDL.Text, IDL.Opt(IDL.Int)], [Result], []),
-    updateStatus:         IDL.Func([IDL.Text, RequestStatus, IDL.Text], [Result], []),
-    getRequest:           IDL.Func([IDL.Text], [IDL.Opt(MaintenanceRequest)], ["query"]),
-    getMyRequests:        IDL.Func([], [IDL.Vec(MaintenanceRequest)], ["query"]),
-    getRequestsForUnit:   IDL.Func([IDL.Text], [IDL.Vec(MaintenanceRequest)], ["query"]),
-    getAllRequests:        IDL.Func([], [IDL.Vec(MaintenanceRequest)], ["query"]),
-    getOpenRequests:      IDL.Func([], [IDL.Vec(MaintenanceRequest)], ["query"]),
+    setMembersCanisterId:  IDL.Func([IDL.Text],                                       [],       []),
+    setApprovalThreshold:  IDL.Func([IDL.Opt(IDL.Nat)],                               [],       []),
+    getApprovalThreshold:  IDL.Func([],                              [IDL.Opt(IDL.Nat)],        ["query"]),
+    submitRequest:         IDL.Func([IDL.Text, RequestCategory, IDL.Text, IDL.Vec(IDL.Text)], [Result], []),
+    assignRequest:         IDL.Func([IDL.Text, IDL.Text, IDL.Opt(IDL.Int), IDL.Opt(IDL.Nat)], [Result], []),
+    approveAssignment:     IDL.Func([IDL.Text],                                       [Result], []),
+    rejectAssignment:      IDL.Func([IDL.Text, IDL.Text],                             [Result], []),
+    updateStatus:          IDL.Func([IDL.Text, RequestStatus, IDL.Text],              [Result], []),
+    getRequest:            IDL.Func([IDL.Text],           [IDL.Opt(MaintenanceRequest)],        ["query"]),
+    getMyRequests:         IDL.Func([],                   [IDL.Vec(MaintenanceRequest)],        ["query"]),
+    getRequestsForUnit:    IDL.Func([IDL.Text],           [IDL.Vec(MaintenanceRequest)],        ["query"]),
+    getAllRequests:         IDL.Func([],                   [IDL.Vec(MaintenanceRequest)],        ["query"]),
+    getOpenRequests:       IDL.Func([],                   [IDL.Vec(MaintenanceRequest)],        ["query"]),
+    getPendingApproval:    IDL.Func([],                   [IDL.Vec(MaintenanceRequest)],        ["query"]),
   });
 }
 
@@ -76,10 +90,17 @@ export type RequestCategory =
 
 export type RequestStatus =
   | { Open: null }
+  | { PendingApproval: null }
   | { Assigned: null }
   | { InProgress: null }
   | { Resolved: null }
   | { Closed: null };
+
+export type ApprovalState =
+  | { NotRequired: null }
+  | { Pending: null }
+  | { Approved: { by: { toText(): string }; at: bigint } }
+  | { Rejected: { by: { toText(): string }; at: bigint; reason: string } };
 
 export type AuditEntry = {
   status:    RequestStatus;
@@ -97,7 +118,9 @@ export type MaintenanceRequest = {
   submittedBy:      { toText: () => string };
   assignedVendorId: [] | [string];
   scheduledDate:    [] | [bigint];
+  estimatedCents:   [] | [bigint];
   status:           RequestStatus;
+  approvalState:    ApprovalState;
   slaWarning:       boolean;
   history:          AuditEntry[];
   createdAt:        bigint;
@@ -137,6 +160,12 @@ export async function getOpenRequests(): Promise<MaintenanceRequest[]> {
   return actor.getOpenRequests();
 }
 
+export async function getPendingApproval(): Promise<MaintenanceRequest[]> {
+  const actor = await createActor();
+  if (!actor) return [];
+  return actor.getPendingApproval();
+}
+
 export async function getRequestsForUnit(unitId: string): Promise<MaintenanceRequest[]> {
   const actor = await createActor();
   if (!actor) return [];
@@ -155,13 +184,35 @@ export async function submitRequest(
 }
 
 export async function assignRequest(
-  requestId:     string,
-  vendorId:      string,
-  scheduledDate: bigint | null
+  requestId:      string,
+  vendorId:       string,
+  scheduledDate:  bigint | null,
+  estimatedCents: bigint | null
 ): Promise<{ ok: MaintenanceRequest } | { err: MaintenanceError }> {
   const actor = await createActor();
   if (!actor) return { err: { NotAuthorized: null } };
-  return actor.assignRequest(requestId, vendorId, scheduledDate === null ? [] : [scheduledDate]);
+  return actor.assignRequest(
+    requestId, vendorId,
+    scheduledDate   === null ? [] : [scheduledDate],
+    estimatedCents  === null ? [] : [estimatedCents]
+  );
+}
+
+export async function approveAssignment(
+  requestId: string
+): Promise<{ ok: MaintenanceRequest } | { err: MaintenanceError }> {
+  const actor = await createActor();
+  if (!actor) return { err: { NotAuthorized: null } };
+  return actor.approveAssignment(requestId);
+}
+
+export async function rejectAssignment(
+  requestId: string,
+  reason:    string
+): Promise<{ ok: MaintenanceRequest } | { err: MaintenanceError }> {
+  const actor = await createActor();
+  if (!actor) return { err: { NotAuthorized: null } };
+  return actor.rejectAssignment(requestId, reason);
 }
 
 export async function updateStatus(
@@ -172,4 +223,19 @@ export async function updateStatus(
   const actor = await createActor();
   if (!actor) return { err: { NotAuthorized: null } };
   return actor.updateStatus(requestId, status, note);
+}
+
+export async function getApprovalThreshold(): Promise<bigint | null> {
+  const actor = await createActor();
+  if (!actor) return null;
+  const result = await actor.getApprovalThreshold() as [] | [bigint];
+  return result[0] ?? null;
+}
+
+export async function setApprovalThreshold(
+  cents: bigint | null
+): Promise<void> {
+  const actor = await createActor();
+  if (!actor) return;
+  await actor.setApprovalThreshold(cents === null ? [] : [cents]);
 }

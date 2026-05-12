@@ -112,16 +112,16 @@ describe("maintenance service", () => {
   // ── assignRequest ─────────────────────────────────────────────────────────
 
   it("assignRequest returns updated request on ok", async () => {
-    const result = await assignRequest("MAINT_1", "vendor-123", null);
+    const result = await assignRequest("MAINT_1", "vendor-123", null, null);
     expect("ok" in result).toBe(true);
-    expect(mockActor.assignRequest).toHaveBeenCalledWith("MAINT_1", "vendor-123", []);
+    expect(mockActor.assignRequest).toHaveBeenCalledWith("MAINT_1", "vendor-123", [], []);
   });
 
   it("assignRequest returns err NotFound for unknown id", async () => {
     (Actor.createActor as any).mockReturnValue(
       makeMockActor({ assignRequest: vi.fn().mockResolvedValue({ err: { NotFound: null } }) })
     );
-    const result = await assignRequest("MAINT_999", "vendor-123", null);
+    const result = await assignRequest("MAINT_999", "vendor-123", null, null);
     expect("err" in result).toBe(true);
     if ("err" in result) expect("NotFound" in result.err).toBe(true);
   });

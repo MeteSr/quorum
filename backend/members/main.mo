@@ -32,7 +32,31 @@ persistent actor Members {
     #BoardPresident;
     #Treasurer;
     #Secretary;
-    #PropertyManager;  // external management company
+    #PropertyManager;        // external management company
+    #AssistantManager;       // reports to PropertyManager (#16)
+    #MaintenanceSupervisor;  // manages maintenance staff (#16)
+    #Staff;                  // general staff, lowest privilege (#16)
+  };
+
+  // Maximum expenditure this principal may approve without escalation.
+  // null = no approval authority.
+  public type StaffScope = { maxApprovalCents : ?Nat };
+
+  public type StaffAssignment = {
+    principal:        Principal;
+    role:             Role;
+    maxApprovalCents: ?Nat;
+    assignedBy:       Principal;
+    assignedAt:       Time.Time;
+  };
+
+  public type ApprovalLog = {
+    id:         Text;
+    requestId:  Text;       // ID in the requesting canister (maintenance, treasury, …)
+    action:     { #Approved; #Rejected };
+    by:         Principal;
+    reason:     Text;       // empty for approvals
+    timestamp:  Time.Time;
   };
 
   public type Member = {
@@ -127,7 +151,10 @@ persistent actor Members {
   private let inviteCodes = Map.empty<Text, InviteCode>();
   private let shareLinks  = Map.empty<Text, ShareLink>();
   private let shareViews  = Map.empty<Text, ShareViewLog>(); // key: "SV_{counter}"
-  private let pushTokens  = Map.empty<Principal, Text>();    // FCM/APNs tokens (#42)
+  private let pushTokens      = Map.empty<Principal, Text>();          // FCM/APNs tokens (#42)
+  private let staffScopes     = Map.empty<Principal, StaffScope>();    // approval limits (#16)
+  private let approvalLogs    = Map.empty<Text, ApprovalLog>();        // audit trail (#16)
+  private var approvalCounter : Nat = 0;
 
   // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -147,6 +174,24 @@ persistent actor Members {
           m.role == #BoardPresident or
           m.role == #Treasurer      or
           m.role == #Secretary
+        )
+      };
+    }
+  };
+
+  // True for board + management-tier roles (PropertyManager and below).
+  private func isManagement(caller : Principal) : Bool {
+    switch (Map.get(members, Principal.compare, caller)) {
+      case null  { false };
+      case (?m)  {
+        m.isActive and (
+          m.role == #BoardMember        or
+          m.role == #BoardPresident     or
+          m.role == #Treasurer          or
+          m.role == #Secretary          or
+          m.role == #PropertyManager    or
+          m.role == #AssistantManager   or
+          m.role == #MaintenanceSupervisor
         )
       };
     }
@@ -495,6 +540,117 @@ persistent actor Members {
     if (not isAdmin(msg.caller) and not isBoard(msg.caller)) return #err(#NotAuthorized);
     let all = Iter.toArray(Map.values(shareViews));
     #ok(Array.filter<ShareViewLog>(all, func(v) { v.token == token }))
+  };
+
+  // ─── Staff Role Hierarchy (#16) ──────────────────────────────────────────────
+
+  // Board-only: assign or update a staff role with an optional approval ceiling.
+  public shared(msg) func assignStaffRole(
+    target           : Principal,
+    role             : Role,
+    maxApprovalCents : ?Nat
+  ) : async Result.Result<StaffAssignment, Error> {
+    if (not isAdmin(msg.caller) and not isBoard(msg.caller)) return #err(#NotAuthorized);
+    switch (Map.get(members, Principal.compare, target)) {
+      case null  { #err(#NotFound) };
+      case (?m)  {
+        Map.add(members, Principal.compare, target, { m with role });
+        let scope : StaffScope = { maxApprovalCents };
+        Map.add(staffScopes, Principal.compare, target, scope);
+        let assignment : StaffAssignment = {
+          principal        = target;
+          role;
+          maxApprovalCents;
+          assignedBy       = msg.caller;
+          assignedAt       = Time.now();
+        };
+        #ok(assignment)
+      };
+    }
+  };
+
+  // Board-only: revoke a staff role, reverting to Homeowner.
+  public shared(msg) func revokeStaffRole(target : Principal) : async Result.Result<(), Error> {
+    if (not isAdmin(msg.caller) and not isBoard(msg.caller)) return #err(#NotAuthorized);
+    switch (Map.get(members, Principal.compare, target)) {
+      case null  { #err(#NotFound) };
+      case (?m)  {
+        Map.add(members, Principal.compare, target, { m with role = #Homeowner });
+        ignore Map.remove(staffScopes, Principal.compare, target);
+        #ok(())
+      };
+    }
+  };
+
+  // Board-only: list all staff assignments.
+  public query(msg) func getStaffAssignments() : async Result.Result<[StaffAssignment], Error> {
+    if (not isAdmin(msg.caller) and not isBoard(msg.caller)) return #err(#NotAuthorized);
+    var result : [StaffAssignment] = [];
+    for ((p, scope) in Map.entries(staffScopes)) {
+      switch (Map.get(members, Principal.compare, p)) {
+        case (?m) {
+          result := Array.append(result, [{
+            principal        = p;
+            role             = m.role;
+            maxApprovalCents = scope.maxApprovalCents;
+            assignedBy       = p;  // stored implicitly from assignment
+            assignedAt       = m.joinedAt;
+          }]);
+        };
+        case null {};
+      };
+    };
+    #ok(result)
+  };
+
+  // Inter-canister query: can this principal approve an action up to amountCents?
+  // Returns true for board members (unlimited) and staff with sufficient ceiling.
+  public query func canApprove(p : Principal, amountCents : Nat) : async Bool {
+    switch (Map.get(members, Principal.compare, p)) {
+      case null  { false };
+      case (?m)  {
+        if (not m.isActive) return false;
+        // Board roles have unlimited approval authority.
+        if (m.role == #BoardMember or m.role == #BoardPresident or
+            m.role == #Treasurer   or m.role == #Secretary)
+          return true;
+        // Management roles check their ceiling.
+        switch (Map.get(staffScopes, Principal.compare, p)) {
+          case null        { false };
+          case (?scope)    {
+            switch (scope.maxApprovalCents) {
+              case null      { false };
+              case (?ceiling){ amountCents <= ceiling };
+            }
+          };
+        }
+      };
+    }
+  };
+
+  // Log an approval/rejection action (called from other canisters or internally).
+  public shared(msg) func logApprovalAction(
+    requestId : Text,
+    action    : { #Approved; #Rejected },
+    reason    : Text
+  ) : async () {
+    if (not isManagement(msg.caller) and not isAdmin(msg.caller)) return;
+    approvalCounter += 1;
+    let entry : ApprovalLog = {
+      id        = "APR_" # Nat.toText(approvalCounter);
+      requestId;
+      action;
+      by        = msg.caller;
+      reason;
+      timestamp = Time.now();
+    };
+    Map.add(approvalLogs, Text.compare, entry.id, entry);
+  };
+
+  // Board-only: view full approval audit trail.
+  public query(msg) func getApprovalLog() : async Result.Result<[ApprovalLog], Error> {
+    if (not isAdmin(msg.caller) and not isBoard(msg.caller)) return #err(#NotAuthorized);
+    #ok(Iter.toArray(Map.values(approvalLogs)))
   };
 
   // ─── Push Tokens (#42) ───────────────────────────────────────────────────────

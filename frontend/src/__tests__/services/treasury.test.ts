@@ -38,6 +38,10 @@ import {
   openCollectionCase,
   escalateCollection,
   resolveCollection,
+  getQBOStatus,
+  setQBOConfig,
+  getQBOSyncLog,
+  retrySync,
 } from "@/services/treasury";
 
 const MOCK_ASSESSMENT = {
@@ -135,6 +139,25 @@ const MOCK_COLLECTION_EVENT = {
   createdBy: { toText: () => "board-principal" } as any,
 };
 
+const MOCK_QBO_STATUS = {
+  configured:  true,
+  realmId:     "9341453229301234",
+  tokenExpiry: BigInt(1_800_000_000_000_000_000),
+};
+
+const MOCK_QBO_SYNC_ENTRY = {
+  id:           "QBO_1",
+  paymentId:    "PAY_1",
+  assessmentId: "asmt-1",
+  unitId:       "12A",
+  amountCents:  BigInt(15000),
+  status:       { Synced: null } as const,
+  qboPaymentId: ["qbo-pay-abc"] as [string],
+  syncedAt:     [BigInt(1_700_000_001_000_000_000)] as [bigint],
+  errorMsg:     [] as [],
+  createdAt:    BigInt(1_700_000_000_000_000_000),
+};
+
 function makeMockActor(overrides: Record<string, any> = {}) {
   return {
     getOutstandingAssessments: vi.fn().mockResolvedValue([MOCK_ASSESSMENT]),
@@ -165,6 +188,10 @@ function makeMockActor(overrides: Record<string, any> = {}) {
     openCollectionCase:        vi.fn().mockResolvedValue({ ok: MOCK_DELINQUENCY }),
     escalateCollection:        vi.fn().mockResolvedValue({ ok: { ...MOCK_DELINQUENCY, stage: { FirstNotice: null } } }),
     resolveCollection:         vi.fn().mockResolvedValue({ ok: null }),
+    getQBOStatus:              vi.fn().mockResolvedValue(MOCK_QBO_STATUS),
+    setQBOConfig:              vi.fn().mockResolvedValue(undefined),
+    getQBOSyncLog:             vi.fn().mockResolvedValue([MOCK_QBO_SYNC_ENTRY]),
+    retrySync:                 vi.fn().mockResolvedValue({ ok: MOCK_QBO_SYNC_ENTRY }),
     ...overrides,
   };
 }
@@ -538,5 +565,75 @@ describe("treasury service — email config (#32)", () => {
   it("setEmailConfig returns undefined without throwing", async () => {
     const result = await setEmailConfig({ resendApiKey: "re_k", fromEmail: "a@b.com", fromName: "HOA" });
     expect(result).toBeUndefined();
+  });
+});
+
+describe("treasury service — getQBOStatus (#19)", () => {
+  beforeEach(() => vi.mocked(Actor.createActor).mockReturnValue(makeMockActor() as any));
+
+  it("returns configured status with realmId", async () => {
+    const status = await getQBOStatus();
+    expect(status.configured).toBe(true);
+    expect(status.realmId).toBe("9341453229301234");
+  });
+
+  it("returns not-configured defaults when no canister", async () => {
+    vi.mocked(Actor.createActor).mockReturnValue(
+      makeMockActor({ getQBOStatus: vi.fn().mockResolvedValue({ configured: false, realmId: "", tokenExpiry: BigInt(0) }) }) as any
+    );
+    const status = await getQBOStatus();
+    expect(status.configured).toBe(false);
+  });
+});
+
+describe("treasury service — setQBOConfig (#19)", () => {
+  beforeEach(() => vi.mocked(Actor.createActor).mockReturnValue(makeMockActor() as any));
+
+  it("calls actor with full config object", async () => {
+    const spy = vi.fn().mockResolvedValue(undefined);
+    vi.mocked(Actor.createActor).mockReturnValue(makeMockActor({ setQBOConfig: spy }) as any);
+    const cfg = { realmId: "123", accessToken: "eyJ", refreshToken: "AB11", tokenExpiry: BigInt(1_800_000_000_000_000_000) };
+    await setQBOConfig(cfg);
+    expect(spy).toHaveBeenCalledWith(cfg);
+  });
+});
+
+describe("treasury service — getQBOSyncLog (#19)", () => {
+  beforeEach(() => vi.mocked(Actor.createActor).mockReturnValue(makeMockActor() as any));
+
+  it("returns sync log entries", async () => {
+    const log = await getQBOSyncLog();
+    expect(log).toHaveLength(1);
+    expect(log[0].id).toBe("QBO_1");
+    expect(log[0].status).toEqual({ Synced: null });
+  });
+
+  it("returns empty array when canister absent", async () => {
+    vi.mocked(Actor.createActor).mockReturnValue(
+      makeMockActor({ getQBOSyncLog: vi.fn().mockResolvedValue([]) }) as any
+    );
+    expect(await getQBOSyncLog()).toEqual([]);
+  });
+});
+
+describe("treasury service — retrySync (#19)", () => {
+  beforeEach(() => vi.mocked(Actor.createActor).mockReturnValue(makeMockActor() as any));
+
+  it("returns updated sync entry on ok", async () => {
+    const result = await retrySync("QBO_1");
+    expect("ok" in result).toBe(true);
+    if ("ok" in result) {
+      expect(result.ok.id).toBe("QBO_1");
+      expect(result.ok.status).toEqual({ Synced: null });
+    }
+  });
+
+  it("returns err NotFound for unknown entry", async () => {
+    vi.mocked(Actor.createActor).mockReturnValue(
+      makeMockActor({ retrySync: vi.fn().mockResolvedValue({ err: { NotFound: null } }) }) as any
+    );
+    const result = await retrySync("QBO_999");
+    expect("err" in result).toBe(true);
+    if ("err" in result) expect("NotFound" in result.err).toBe(true);
   });
 });

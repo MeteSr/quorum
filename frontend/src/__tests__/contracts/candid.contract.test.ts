@@ -47,11 +47,14 @@ describe("members IDL factory", () => {
   test("exposes all expected methods", () => {
     const expected = [
       "assignRole",
+      "assignStaffRole",
+      "canApprove",
       "createShareLink",
       "deactivateMember",
       "generateInviteCode",
       "getActiveMembers",
       "getAllMembers",
+      "getApprovalLog",
       "getCommunityProfile",
       "getInviteCode",
       "getMember",
@@ -62,9 +65,11 @@ describe("members IDL factory", () => {
       "getPushTokens",
       "getShareLink",
       "getShareLinkViews",
+      "getStaffAssignments",
       "getWebsiteConfig",
       "initAdmin",
       "isBoardMember",
+      "logApprovalAction",
       "metrics",
       "registerMember",
       "registerPushToken",
@@ -72,6 +77,7 @@ describe("members IDL factory", () => {
       "resendWelcomePacket",
       "revokeInviteCode",
       "revokeShareLink",
+      "revokeStaffRole",
       "setAccentColor",
       "setAnnouncementsCanisterId",
       "setCommunityProfile",
@@ -298,6 +304,8 @@ describe("treasury IDL factory", () => {
       "getLateFeePolicy",
       "getOutstandingAssessments",
       "getPaymentHistory",
+      "getQBOStatus",
+      "getQBOSyncLog",
       "getReminderLog",
       "getReminderPolicy",
       "getReserveFundReport",
@@ -307,10 +315,12 @@ describe("treasury IDL factory", () => {
       "openCollectionCase",
       "postAssessment",
       "resolveCollection",
+      "retrySync",
       "setBudgetLine",
       "setEmailConfig",
       "setLateFeePolicy",
       "setMembersCanisterId",
+      "setQBOConfig",
       "setReminderPolicy",
       "setReserveFundBalance",
       "transform",
@@ -333,6 +343,30 @@ describe("treasury IDL factory", () => {
     const m = methods.get("getAssessmentsForUnit")!;
     expect(m.isQuery).toBe(true);
     expect(m.argTypes).toHaveLength(1);
+  });
+
+  test("setQBOConfig is an update call with 1 arg", () => {
+    const m = methods.get("setQBOConfig")!;
+    expect(m.isQuery).toBe(false);
+    expect(m.argTypes).toHaveLength(1);
+  });
+
+  test("getQBOStatus is a query with no args", () => {
+    const m = methods.get("getQBOStatus")!;
+    expect(m.isQuery).toBe(true);
+    expect(m.argTypes).toHaveLength(0);
+  });
+
+  test("retrySync is an update call with 1 arg", () => {
+    const m = methods.get("retrySync")!;
+    expect(m.isQuery).toBe(false);
+    expect(m.argTypes).toHaveLength(1);
+  });
+
+  test("getQBOSyncLog is a query with no args", () => {
+    const m = methods.get("getQBOSyncLog")!;
+    expect(m.isQuery).toBe(true);
+    expect(m.argTypes).toHaveLength(0);
   });
 });
 
@@ -506,12 +540,17 @@ describe("maintenance IDL factory", () => {
 
   test("exposes all expected methods", () => {
     const expected = [
+      "approveAssignment",
       "assignRequest",
       "getAllRequests",
+      "getApprovalThreshold",
       "getMyRequests",
       "getOpenRequests",
+      "getPendingApproval",
       "getRequest",
       "getRequestsForUnit",
+      "rejectAssignment",
+      "setApprovalThreshold",
       "setMembersCanisterId",
       "submitRequest",
       "updateStatus",
@@ -531,8 +570,24 @@ describe("maintenance IDL factory", () => {
     expect(methods.get("assignRequest")!.isQuery).toBe(false);
   });
 
-  test("assignRequest takes 3 args", () => {
-    expect(methods.get("assignRequest")!.argTypes).toHaveLength(3);
+  test("assignRequest takes 4 args", () => {
+    expect(methods.get("assignRequest")!.argTypes).toHaveLength(4);
+  });
+
+  test("approveAssignment is an update call with 1 arg", () => {
+    const m = methods.get("approveAssignment")!;
+    expect(m.isQuery).toBe(false);
+    expect(m.argTypes).toHaveLength(1);
+  });
+
+  test("rejectAssignment is an update call with 2 args", () => {
+    const m = methods.get("rejectAssignment")!;
+    expect(m.isQuery).toBe(false);
+    expect(m.argTypes).toHaveLength(2);
+  });
+
+  test("getPendingApproval is a query", () => {
+    expect(methods.get("getPendingApproval")!.isQuery).toBe(true);
   });
 
   test("updateStatus is an update call", () => {
