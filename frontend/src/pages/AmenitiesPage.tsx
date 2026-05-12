@@ -1,4 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
+import { loadStripe } from "@stripe/stripe-js";
+import { Elements, PaymentElement, useStripe, useElements } from "@stripe/react-stripe-js";
 import { useAuthStore } from "@/store/authStore";
 import {
   createAmenity,
@@ -32,6 +34,20 @@ const S = {
   mono:     "'IBM Plex Mono', monospace",
   sans:     "'IBM Plex Sans', sans-serif",
 };
+
+const stripePromise = loadStripe(
+  (import.meta as any).env?.VITE_STRIPE_PUBLISHABLE_KEY ?? ""
+);
+
+function computeBookingStartNs(date: string, slot: number, slotDurationMins: number): bigint {
+  const [yearStr, monthStr, dayStr] = date.split("-");
+  const startMins = 6 * 60 + slot * slotDurationMins;
+  const d = new Date(
+    Number(yearStr), Number(monthStr) - 1, Number(dayStr),
+    Math.floor(startMins / 60), startMins % 60
+  );
+  return BigInt(d.getTime()) * 1_000_000n;
+}
 
 type Tab = "amenities" | "book" | "mine";
 
@@ -261,20 +277,98 @@ function ManagePanel({ amenities, reload }: { amenities: Amenity[]; reload: () =
   );
 }
 
+// ─── Deposit Confirmation Step ────────────────────────────────────────────────
+
+function DepositForm({
+  reservation,
+  slotLabel: slotLabelText,
+  onSuccess,
+  onCancel,
+}: {
+  reservation: Reservation;
+  slotLabel: string;
+  onSuccess: () => void;
+  onCancel: () => Promise<void>;
+}) {
+  const stripe = useStripe();
+  const elements = useElements();
+  const [confirming, setConfirming] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
+  const [error, setError] = useState("");
+
+  async function handleConfirm(e: React.FormEvent) {
+    e.preventDefault();
+    if (!stripe || !elements) return;
+    setConfirming(true); setError("");
+    const { error: stripeError } = await stripe.confirmPayment({
+      elements,
+      confirmParams: { return_url: window.location.href },
+      redirect: "if_required",
+    });
+    setConfirming(false);
+    if (stripeError) {
+      setError(stripeError.message ?? "Payment confirmation failed.");
+    } else {
+      onSuccess();
+    }
+  }
+
+  async function handleCancel() {
+    setCancelling(true);
+    await onCancel();
+    setCancelling(false);
+  }
+
+  return (
+    <div style={{ border: `1px solid ${S.rule}`, padding: "24px", marginTop: 16, background: "#FFFBF0" }}>
+      <div style={{ fontFamily: S.mono, fontSize: "0.65rem", letterSpacing: "0.1em", textTransform: "uppercase", color: S.inkLight, marginBottom: 12 }}>
+        Deposit Required — {slotLabelText}
+      </div>
+      <p style={{ fontFamily: S.sans, fontSize: "0.88rem", color: S.inkLight, marginBottom: 16 }}>
+        A deposit hold will be placed on your card. It will be released at check-out or forfeited on late cancellation per the amenity policy.
+      </p>
+      <form onSubmit={handleConfirm}>
+        <PaymentElement />
+        {error && <p style={{ color: S.rust, fontFamily: S.sans, fontSize: "0.82rem", marginTop: 10 }}>{error}</p>}
+        <div style={{ display: "flex", gap: 12, marginTop: 16 }}>
+          <button type="submit" disabled={!stripe || confirming} style={{
+            padding: "10px 20px", background: S.rust, color: "#fff", border: "none",
+            fontFamily: S.mono, fontSize: "0.72rem", letterSpacing: "0.06em",
+            textTransform: "uppercase", cursor: (!stripe || confirming) ? "not-allowed" : "pointer",
+            opacity: (!stripe || confirming) ? 0.6 : 1,
+          }}>
+            {confirming ? "Authorizing…" : "Authorize Deposit Hold"}
+          </button>
+          <button type="button" onClick={handleCancel} disabled={cancelling} style={{
+            padding: "10px 16px", background: "none", border: `1px solid ${S.rule}`,
+            fontFamily: S.mono, fontSize: "0.72rem", letterSpacing: "0.06em",
+            textTransform: "uppercase", cursor: cancelling ? "not-allowed" : "pointer",
+            color: S.inkLight, opacity: cancelling ? 0.5 : 1,
+          }}>
+            {cancelling ? "Cancelling…" : "Cancel Booking"}
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
 // ─── Book Panel ───────────────────────────────────────────────────────────────
 
 function BookPanel({ amenities }: { amenities: Amenity[] }) {
   const { principal } = useAuthStore();
-  const [amenityId,   setAmenityId]   = useState("");
-  const [date,        setDate]        = useState(today());
-  const [unitId,      setUnitId]      = useState("");
-  const [slots,       setSlots]       = useState<SlotAvailability[]>([]);
-  const [loadingSlots, setLoadingSlots] = useState(false);
-  const [booking,     setBooking]     = useState<number | null>(null);
-  const [guestCount,  setGuestCount]  = useState(1);
-  const [bookError,   setBookError]   = useState("");
-  const [bookSuccess, setBookSuccess] = useState("");
-  const [joining,     setJoining]     = useState<number | null>(null);
+  const [amenityId,         setAmenityId]         = useState("");
+  const [date,              setDate]              = useState(today());
+  const [unitId,            setUnitId]            = useState("");
+  const [slots,             setSlots]             = useState<SlotAvailability[]>([]);
+  const [loadingSlots,      setLoadingSlots]      = useState(false);
+  const [booking,           setBooking]           = useState<number | null>(null);
+  const [guestCount,        setGuestCount]        = useState(1);
+  const [bookError,         setBookError]         = useState("");
+  const [bookSuccess,       setBookSuccess]       = useState("");
+  const [joining,           setJoining]           = useState<number | null>(null);
+  const [pendingReservation, setPendingReservation] = useState<Reservation | null>(null);
+  const [pendingSlotLabel,   setPendingSlotLabel]   = useState("");
 
   const selectedAmenity = amenities.find(a => a.id === amenityId);
 
@@ -289,11 +383,19 @@ function BookPanel({ amenities }: { amenities: Amenity[] }) {
 
   async function handleBook(slot: number) {
     setBookError(""); setBookSuccess(""); setBooking(slot);
-    const result = await createReservation(amenityId, date, slot, guestCount, unitId);
+    const dur = selectedAmenity ? Number(selectedAmenity.slotDurationMins) : 60;
+    const bookingStartNs = computeBookingStartNs(date, slot, dur);
+    const result = await createReservation(amenityId, date, slot, guestCount, unitId, bookingStartNs);
     setBooking(null);
     if ("err" in result) { setBookError(errMsg(result.err)); return; }
-    setBookSuccess(`Booked ${slotLabel(slot, selectedAmenity ? Number(selectedAmenity.slotDurationMins) : 60)}`);
-    loadSlots();
+    const label = slotLabel(slot, dur);
+    if (result.ok.clientSecret.length > 0) {
+      setPendingReservation(result.ok);
+      setPendingSlotLabel(label);
+    } else {
+      setBookSuccess(`Booked ${label}`);
+      loadSlots();
+    }
   }
 
   async function handleJoinWaitlist(slot: number) {
@@ -335,11 +437,31 @@ function BookPanel({ amenities }: { amenities: Amenity[] }) {
       {bookError   && <p style={{ color: S.rust,  fontFamily: S.sans, fontSize: "0.85rem", marginBottom: 12 }}>{bookError}</p>}
       {bookSuccess && <p style={{ color: S.green, fontFamily: S.sans, fontSize: "0.85rem", marginBottom: 12 }}>{bookSuccess}</p>}
 
-      {/* Deposit notice */}
-      {selectedAmenity && selectedAmenity.depositAmountCents.length > 0 && (
+      {/* Deposit confirmation step */}
+      {pendingReservation && pendingReservation.clientSecret.length > 0 && (
+        <Elements stripe={stripePromise} options={{ clientSecret: pendingReservation.clientSecret[0]! }}>
+          <DepositForm
+            reservation={pendingReservation}
+            slotLabel={pendingSlotLabel}
+            onSuccess={() => {
+              setPendingReservation(null);
+              setBookSuccess(`Booked ${pendingSlotLabel} — deposit hold authorized`);
+              loadSlots();
+            }}
+            onCancel={async () => {
+              await cancelReservation(pendingReservation.id);
+              setPendingReservation(null);
+              loadSlots();
+            }}
+          />
+        </Elements>
+      )}
+
+      {/* Deposit info (no deposit hold when Stripe not configured) */}
+      {!pendingReservation && selectedAmenity && selectedAmenity.depositAmountCents.length > 0 && (
         <div style={{ padding: "10px 14px", border: `1px solid ${S.rule}`, background: "#FFFBF0", marginBottom: 16, fontFamily: S.sans, fontSize: "0.85rem", color: S.inkLight }}>
           This amenity requires a <strong>${(Number(selectedAmenity.depositAmountCents[0]) / 100).toFixed(2)} refundable deposit</strong>.
-          Deposit collection is processed separately by the board (see issue #43).
+          Your card will be placed on hold at the time of booking.
         </div>
       )}
 

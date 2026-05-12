@@ -21,6 +21,8 @@ const deployed = !!CANISTER_ID;
 
 const RUN_ID  = Date.now();
 const TEST_DATE = "2099-07-04";  // far future to avoid conflicts between runs
+// Epoch-ns for TEST_DATE 08:00 UTC — passed as bookingStartNs to createReservation.
+const TEST_BOOKING_NS = BigInt("4070736000000000000");
 
 // Set up a fixed Ed25519 identity once for all integration tests so that
 // the agent is non-anonymous and setAdmin/createAmenity calls are authorised.
@@ -116,7 +118,7 @@ describe.skipIf(!deployed)("createReservation — capacity + Candid round-trip",
     amenityId = created.ok.id;
 
     const result = await a.createReservation(
-      amenityId, TEST_DATE, BigInt(0), BigInt(1), "unitA"
+      amenityId, TEST_DATE, BigInt(0), BigInt(1), "unitA", TEST_BOOKING_NS
     ) as any;
     if ("err" in result) throw new Error(JSON.stringify(result.err));
     reservation = result.ok;
@@ -144,7 +146,7 @@ describe.skipIf(!deployed)("createReservation — capacity + Candid round-trip",
     const a = await getActor() as any;
     // Use slot 1 (unbooked) so we hit CapacityExceeded before AlreadyBooked.
     const result = await a.createReservation(
-      amenityId, TEST_DATE, BigInt(1), BigInt(3), "unitB"
+      amenityId, TEST_DATE, BigInt(1), BigInt(3), "unitB", TEST_BOOKING_NS
     ) as any;
     expect("err" in result).toBe(true);
     expect(result.err).toHaveProperty("CapacityExceeded");
@@ -167,7 +169,7 @@ describe.skipIf(!deployed)("cancelReservation — status transition", () => {
     amenityId = created.ok.id;
 
     const result = await a.createReservation(
-      amenityId, TEST_DATE, BigInt(1), BigInt(1), "unitC"
+      amenityId, TEST_DATE, BigInt(1), BigInt(1), "unitC", TEST_BOOKING_NS
     ) as any;
     if ("err" in result) throw new Error(JSON.stringify(result.err));
     reservationId = result.ok.id;
@@ -207,7 +209,7 @@ describe.skipIf(!deployed)("blockDate — prevents reservations", () => {
   it("returns DateBlocked when booking on blocked date", async () => {
     const a = await getActor() as any;
     const result = await a.createReservation(
-      amenityId, BLOCKED_DATE, BigInt(0), BigInt(1), "unitD"
+      amenityId, BLOCKED_DATE, BigInt(0), BigInt(1), "unitD", TEST_BOOKING_NS
     ) as any;
     expect("err" in result).toBe(true);
     expect(result.err).toHaveProperty("DateBlocked");
@@ -237,7 +239,7 @@ describe.skipIf(!deployed)("joinWaitlist — when slot is full", () => {
     amenityId = created.ok.id;
 
     // Fill slot 3.
-    await a.createReservation(amenityId, TEST_DATE, BigInt(3), BigInt(1), "unitE");
+    await a.createReservation(amenityId, TEST_DATE, BigInt(3), BigInt(1), "unitE", TEST_BOOKING_NS);
 
     const result = await a.joinWaitlist(amenityId, TEST_DATE, BigInt(3), "unitF") as any;
     if ("err" in result) throw new Error(JSON.stringify(result.err));

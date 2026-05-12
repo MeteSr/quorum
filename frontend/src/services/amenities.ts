@@ -28,15 +28,18 @@ export function idlFactory({ IDL }: { IDL: any }) {
   });
 
   const Reservation = IDL.Record({
-    id:         IDL.Text,
-    amenityId:  IDL.Text,
-    date:       IDL.Text,
-    startSlot:  IDL.Nat,
-    guestCount: IDL.Nat,
-    bookedBy:   IDL.Principal,
-    unitId:     IDL.Text,
-    status:     ReservationStatus,
-    createdAt:  IDL.Int,
+    id:                     IDL.Text,
+    amenityId:              IDL.Text,
+    date:                   IDL.Text,
+    startSlot:              IDL.Nat,
+    guestCount:             IDL.Nat,
+    bookedBy:               IDL.Principal,
+    unitId:                 IDL.Text,
+    status:                 ReservationStatus,
+    createdAt:              IDL.Int,
+    bookingStartNs:         IDL.Int,
+    stripePaymentIntentId:  IDL.Opt(IDL.Text),
+    clientSecret:           IDL.Opt(IDL.Text),
   });
 
   const WaitlistEntry = IDL.Record({
@@ -89,10 +92,12 @@ export function idlFactory({ IDL }: { IDL: any }) {
   const ResultNull         = IDL.Variant({ ok: IDL.Null,      err: AmenitiesError });
 
   return IDL.Service({
-    setAdmin:            IDL.Func([IDL.Principal],                                                                         [ResultNull],        []),
+    setAdmin:                    IDL.Func([IDL.Principal], [ResultNull], []),
+    setStripeKey:                IDL.Func([IDL.Text],      [],           []),
+    setAnnouncementsCanisterId:  IDL.Func([IDL.Text],      [],           []),
     createAmenity:       IDL.Func([IDL.Text, IDL.Text, IDL.Nat, IDL.Nat, IDL.Nat, IDL.Opt(IDL.Nat), IDL.Nat],             [ResultAmenity],     []),
     updateAmenity:       IDL.Func([IDL.Text, IDL.Text, IDL.Text, IDL.Nat, IDL.Nat, IDL.Nat, IDL.Opt(IDL.Nat), IDL.Nat, IDL.Bool], [ResultAmenity], []),
-    createReservation:   IDL.Func([IDL.Text, IDL.Text, IDL.Nat, IDL.Nat, IDL.Text],                                       [ResultReservation], []),
+    createReservation:   IDL.Func([IDL.Text, IDL.Text, IDL.Nat, IDL.Nat, IDL.Text, IDL.Int],                             [ResultReservation], []),
     cancelReservation:   IDL.Func([IDL.Text],                                                                              [ResultReservation], []),
     completeReservation: IDL.Func([IDL.Text],                                                                              [ResultReservation], []),
     blockDate:           IDL.Func([IDL.Text, IDL.Text, IDL.Text],                                                         [ResultBlockedDate], []),
@@ -132,15 +137,18 @@ export interface Amenity {
 }
 
 export interface Reservation {
-  id:         string;
-  amenityId:  string;
-  date:       string;
-  startSlot:  bigint;
-  guestCount: bigint;
-  bookedBy:   import("@dfinity/principal").Principal;
-  unitId:     string;
-  status:     ReservationStatus;
-  createdAt:  bigint;
+  id:                     string;
+  amenityId:              string;
+  date:                   string;
+  startSlot:              bigint;
+  guestCount:             bigint;
+  bookedBy:               import("@dfinity/principal").Principal;
+  unitId:                 string;
+  status:                 ReservationStatus;
+  createdAt:              bigint;
+  bookingStartNs:         bigint;
+  stripePaymentIntentId:  [] | [string];
+  clientSecret:           [] | [string];
 }
 
 export interface WaitlistEntry {
@@ -234,15 +242,28 @@ export async function updateAmenity(
 }
 
 export async function createReservation(
-  amenityId:  string,
-  date:       string,
-  startSlot:  number,
-  guestCount: number,
-  unitId:     string
+  amenityId:      string,
+  date:           string,
+  startSlot:      number,
+  guestCount:     number,
+  unitId:         string,
+  bookingStartNs: bigint
 ): Promise<{ ok: Reservation } | { err: AmenitiesError }> {
   const actor = await createActor() as any;
   if (!actor) return { err: { InvalidInput: "canister not deployed" } };
-  return actor.createReservation(amenityId, date, BigInt(startSlot), BigInt(guestCount), unitId);
+  return actor.createReservation(amenityId, date, BigInt(startSlot), BigInt(guestCount), unitId, bookingStartNs);
+}
+
+export async function setStripeKey(key: string): Promise<void> {
+  const actor = await createActor() as any;
+  if (!actor) return;
+  return actor.setStripeKey(key);
+}
+
+export async function setAnnouncementsCanisterId(id: string): Promise<void> {
+  const actor = await createActor() as any;
+  if (!actor) return;
+  return actor.setAnnouncementsCanisterId(id);
 }
 
 export async function cancelReservation(
