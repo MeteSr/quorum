@@ -319,7 +319,7 @@ describe("amenities service — getMyReservations", () => {
   beforeEach(() => vi.mocked(Actor.createActor).mockReturnValue(makeMockActor() as any));
 
   it("returns reservations for the caller", async () => {
-    const result = await getMyReservations(CALLER);
+    const result = await getMyReservations("2vxsx-fae");
     expect(result.length).toBe(1);
   });
 });
@@ -365,7 +365,7 @@ describe("amenities service — getMyWaitlistEntries", () => {
   beforeEach(() => vi.mocked(Actor.createActor).mockReturnValue(makeMockActor() as any));
 
   it("returns waitlist entries for the principal", async () => {
-    const result = await getMyWaitlistEntries(CALLER);
+    const result = await getMyWaitlistEntries("2vxsx-fae");
     expect(result.length).toBe(1);
   });
 });

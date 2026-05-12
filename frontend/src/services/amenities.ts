@@ -1,4 +1,5 @@
 import { Actor } from "@icp-sdk/core/agent";
+import { Principal } from "@dfinity/principal";
 import { getAgent } from "@/services/actor";
 
 const CANISTER_ID_AMENITIES = (process.env as any).CANISTER_ID_AMENITIES || "";
@@ -200,7 +201,7 @@ export async function createAmenity(
   const actor = await createActor() as any;
   if (!actor) return { err: { InvalidInput: "canister not deployed" } };
   const deposit: [] | [bigint] = depositAmountCents.length > 0
-    ? [BigInt(depositAmountCents[0])]
+    ? [BigInt(depositAmountCents[0]!)]
     : [];
   return actor.createAmenity(
     name, description,
@@ -223,7 +224,7 @@ export async function updateAmenity(
   const actor = await createActor() as any;
   if (!actor) return { err: { InvalidInput: "canister not deployed" } };
   const deposit: [] | [bigint] = depositAmountCents.length > 0
-    ? [BigInt(depositAmountCents[0])]
+    ? [BigInt(depositAmountCents[0]!)]
     : [];
   return actor.updateAmenity(
     amenityId, name, description,
@@ -320,11 +321,11 @@ export async function getReservationsForAmenity(
 }
 
 export async function getMyReservations(
-  principal: import("@dfinity/principal").Principal
+  principalText: string
 ): Promise<Reservation[]> {
   const actor = await createActor() as any;
   if (!actor) return [];
-  return actor.getMyReservations(principal);
+  return actor.getMyReservations(Principal.fromText(principalText));
 }
 
 export async function getAvailability(
@@ -353,9 +354,9 @@ export async function getWaitlistForSlot(
 }
 
 export async function getMyWaitlistEntries(
-  principal: import("@dfinity/principal").Principal
+  principalText: string
 ): Promise<WaitlistEntry[]> {
   const actor = await createActor() as any;
   if (!actor) return [];
-  return actor.getMyWaitlistEntries(principal);
+  return actor.getMyWaitlistEntries(Principal.fromText(principalText));
 }

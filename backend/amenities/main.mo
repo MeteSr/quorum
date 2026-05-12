@@ -336,7 +336,7 @@ persistent actor Amenities {
     switch (Map.get(blockedDates, Text.compare, blockedDateId)) {
       case null { #err(#NotFound) };
       case (?_) {
-        Map.delete(blockedDates, Text.compare, blockedDateId);
+        ignore Map.delete(blockedDates, Text.compare, blockedDateId);
         #ok(())
       };
     }
@@ -383,7 +383,7 @@ persistent actor Amenities {
       case null { #err(#NotFound) };
       case (?entry) {
         if (entry.principal != msg.caller and not isAdmin(msg.caller)) return #err(#NotAuthorized);
-        Map.delete(waitlist, Text.compare, waitlistId);
+        ignore Map.delete(waitlist, Text.compare, waitlistId);
         #ok(())
       };
     }
@@ -419,23 +419,18 @@ persistent actor Amenities {
       case (?amenity) {
         let blocked = isDateBlocked(amenityId, date);
         // 6 AM to 10 PM in slotDurationMins increments
-        let startHourMins : Nat = 6 * 60;
-        let endHourMins   : Nat = 22 * 60;
-        let totalSlots = (endHourMins - startHourMins) / amenity.slotDurationMins;
-        var slots : [SlotAvailability] = [];
-        var i = 0;
-        while (i < totalSlots) {
+        // 6 AM to 10 PM = 960 minutes
+        let totalSlots = 960 / amenity.slotDurationMins;
+        Array.tabulate<SlotAvailability>(totalSlots, func(i) {
           let booked = bookedCountForSlot(amenityId, date, i);
-          slots := Array.append(slots, [{
+          {
             slot      = i;
             booked;
             capacity  = amenity.capacity;
             available = not blocked and booked < amenity.capacity;
             blocked;
-          }]);
-          i += 1;
-        };
-        slots
+          }
+        })
       };
     }
   };
