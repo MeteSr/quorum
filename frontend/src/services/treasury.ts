@@ -213,6 +213,50 @@ export function idlFactory({ IDL }: { IDL: any }) {
 
   const ResultQBOEntry = IDL.Variant({ ok: QBOSyncEntry, err: Error });
 
+  const TxImportRow = IDL.Record({
+    unitId:      IDL.Text,
+    dateNs:      IDL.Int,
+    amountCents: IDL.Nat,
+    category:    AssessmentType,
+    description: IDL.Text,
+  });
+
+  const TxBulkResult = IDL.Record({
+    succeeded: IDL.Nat,
+    failed:    IDL.Nat,
+    errors:    IDL.Vec(IDL.Text),
+  });
+
+  const CkUSDCConfig = IDL.Record({
+    enabled:           IDL.Bool,
+    treasuryPrincipal: IDL.Text,
+    usdcRateCents:     IDL.Nat,
+    platformFeeBps:    IDL.Nat,
+  });
+
+  const CkUSDCPayment = IDL.Record({
+    id:          IDL.Text,
+    unitId:      IDL.Text,
+    amountUsdc:  IDL.Nat,
+    amountCents: IDL.Nat,
+    blockIndex:  IDL.Nat,
+    memo:        IDL.Text,
+    confirmedAt: IDL.Int,
+    confirmedBy: IDL.Principal,
+  });
+
+  const CkUSDCStatus = IDL.Record({
+    enabled:           IDL.Bool,
+    treasuryPrincipal: IDL.Text,
+    usdcRateCents:     IDL.Nat,
+    platformFeeBps:    IDL.Nat,
+    paymentCount:      IDL.Nat,
+  });
+
+  const ResultCkPayment = IDL.Variant({ ok: CkUSDCPayment, err: Error });
+  const ResultCkStatus  = IDL.Variant({ ok: CkUSDCStatus,  err: Error });
+  const ResultUnit2     = IDL.Variant({ ok: IDL.Null,       err: Error });
+
   return IDL.Service({
     // wiring
     setMembersCanisterId:       IDL.Func([IDL.Text],                     [],                            []),
@@ -261,6 +305,15 @@ export function idlFactory({ IDL }: { IDL: any }) {
     getQBOStatus:               IDL.Func([],                              [QBOStatus],                   ["query"]),
     retrySync:                  IDL.Func([IDL.Text],                      [ResultQBOEntry],              []),
     getQBOSyncLog:              IDL.Func([],                              [IDL.Vec(QBOSyncEntry)],       ["query"]),
+    // bulk import (#22)
+    bulkImportTransactions:     IDL.Func([IDL.Vec(TxImportRow)],          [TxBulkResult],                []),
+    // ckUSDC (#23)
+    enableCkUSDC:               IDL.Func([IDL.Text, IDL.Nat, IDL.Nat],    [ResultCkStatus],              []),
+    disableCkUSDC:              IDL.Func([],                              [ResultUnit2],                 []),
+    setUsdcRate:                IDL.Func([IDL.Nat],                       [ResultUnit2],                 []),
+    confirmCkUSDCPayment:       IDL.Func([IDL.Nat, IDL.Text, IDL.Nat, IDL.Text], [ResultCkPayment],     []),
+    getCkUSDCStatus:            IDL.Func([],                              [CkUSDCStatus],                ["query"]),
+    getCkUSDCPayments:          IDL.Func([],                              [IDL.Vec(CkUSDCPayment)],      ["query"]),
   });
 }
 
@@ -683,6 +736,39 @@ export interface QBOStatus {
   tokenExpiry: bigint;
 }
 
+export interface TxImportRow {
+  unitId:      string;
+  dateNs:      bigint;
+  amountCents: bigint;
+  category:    AssessmentType;
+  description: string;
+}
+
+export interface TxBulkResult {
+  succeeded: bigint;
+  failed:    bigint;
+  errors:    string[];
+}
+
+export interface CkUSDCPayment {
+  id:          string;
+  unitId:      string;
+  amountUsdc:  bigint;
+  amountCents: bigint;
+  blockIndex:  bigint;
+  memo:        string;
+  confirmedAt: bigint;
+  confirmedBy: import("@dfinity/principal").Principal;
+}
+
+export interface CkUSDCStatus {
+  enabled:           boolean;
+  treasuryPrincipal: string;
+  usdcRateCents:     bigint;
+  platformFeeBps:    bigint;
+  paymentCount:      bigint;
+}
+
 // ─── QuickBooks service functions (#19) ──────────────────────────────────────
 
 export async function setQBOConfig(config: QBOConfig): Promise<void> {
@@ -709,4 +795,63 @@ export async function retrySync(
   const actor = await createActor() as any;
   if (!actor) return { err: { NotFound: null } };
   return actor.retrySync(entryId);
+}
+
+// ─── Bulk import (#22) ────────────────────────────────────────────────────────
+
+export async function bulkImportTransactions(
+  rows: TxImportRow[]
+): Promise<TxBulkResult> {
+  const actor = await createActor() as any;
+  if (!actor) return { succeeded: BigInt(0), failed: BigInt(rows.length), errors: ["canister not deployed"] };
+  return actor.bulkImportTransactions(rows);
+}
+
+// ─── ckUSDC (#23) ────────────────────────────────────────────────────────────
+
+export async function getCkUSDCStatus(): Promise<CkUSDCStatus> {
+  const actor = await createActor() as any;
+  if (!actor) return { enabled: false, treasuryPrincipal: "", usdcRateCents: BigInt(100), platformFeeBps: BigInt(10), paymentCount: BigInt(0) };
+  return actor.getCkUSDCStatus();
+}
+
+export async function getCkUSDCPayments(): Promise<CkUSDCPayment[]> {
+  const actor = await createActor() as any;
+  if (!actor) return [];
+  return actor.getCkUSDCPayments();
+}
+
+export async function enableCkUSDC(
+  treasuryPrincipal: string,
+  usdcRateCents: bigint,
+  platformFeeBps: bigint,
+): Promise<{ ok: CkUSDCStatus } | { err: TreasuryError }> {
+  const actor = await createActor() as any;
+  if (!actor) return { err: { NotAuthorized: null } };
+  return actor.enableCkUSDC(treasuryPrincipal, usdcRateCents, platformFeeBps);
+}
+
+export async function disableCkUSDC(): Promise<{ ok: null } | { err: TreasuryError }> {
+  const actor = await createActor() as any;
+  if (!actor) return { err: { NotAuthorized: null } };
+  return actor.disableCkUSDC();
+}
+
+export async function setUsdcRate(
+  rateCents: bigint,
+): Promise<{ ok: null } | { err: TreasuryError }> {
+  const actor = await createActor() as any;
+  if (!actor) return { err: { NotAuthorized: null } };
+  return actor.setUsdcRate(rateCents);
+}
+
+export async function confirmCkUSDCPayment(
+  blockIndex: bigint,
+  unitId: string,
+  amountUsdc: bigint,
+  memo: string,
+): Promise<{ ok: CkUSDCPayment } | { err: TreasuryError }> {
+  const actor = await createActor() as any;
+  if (!actor) return { err: { NotAuthorized: null } };
+  return actor.confirmCkUSDCPayment(blockIndex, unitId, amountUsdc, memo);
 }

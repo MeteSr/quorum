@@ -9,10 +9,12 @@ import {
   setReserveFundBalance, setBudgetLine,
   getDelinquentUnits, getCollectionHistory, openCollectionCase, escalateCollection, resolveCollection,
   getQBOStatus, setQBOConfig, getQBOSyncLog, retrySync,
+  getCkUSDCStatus, getCkUSDCPayments, enableCkUSDC, disableCkUSDC, setUsdcRate, confirmCkUSDCPayment,
   type Assessment, type LateFeePolicy, type ReminderPolicy, type EmailConfig, type DuesPayment, type ReminderLog,
   type AgingReport, type ReserveFundReport, type BudgetVsActual, type IncomeStatement, type AnnualStatement,
   type DelinquencyRecord, type CollectionEvent, type CollectionStage,
   type QBOConfig, type QBOSyncEntry,
+  type CkUSDCStatus, type CkUSDCPayment,
 } from "@/services/treasury";
 import { getMyProfile } from "@/services/members";
 
@@ -1018,6 +1020,247 @@ function QBOPanel() {
   );
 }
 
+// ─── ckUSDC panel (#23) ──────────────────────────────────────────────────────
+
+function CkUSDCPanel() {
+  const [status,     setStatus    ] = useState<CkUSDCStatus | null>(null);
+  const [payments,   setPayments  ] = useState<CkUSDCPayment[]>([]);
+  const [loading,    setLoading   ] = useState(true);
+  const [saving,     setSaving    ] = useState(false);
+  const [confirming, setConfirming] = useState(false);
+  const [error,      setError     ] = useState<string | null>(null);
+  const [saved,      setSaved     ] = useState(false);
+
+  const [principal,     setPrincipal    ] = useState("");
+  const [rateCents,     setRateCents    ] = useState("100");
+  const [feeBps,        setFeeBps       ] = useState("10");
+  const [newRate,       setNewRate      ] = useState("");
+  const [blockIdx,      setBlockIdx     ] = useState("");
+  const [confirmUnit,   setConfirmUnit  ] = useState("");
+  const [confirmAmt,    setConfirmAmt   ] = useState("");
+  const [confirmMemo,   setConfirmMemo  ] = useState("");
+
+  useEffect(() => {
+    Promise.all([getCkUSDCStatus(), getCkUSDCPayments()])
+      .then(([s, p]) => { setStatus(s); setPayments(p); })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
+
+  async function handleEnable() {
+    if (!principal) { setError("Treasury principal required"); return; }
+    setSaving(true); setError(null);
+    const res = await enableCkUSDC(principal, BigInt(parseInt(rateCents, 10) || 100), BigInt(parseInt(feeBps, 10) || 10));
+    if ("ok" in res) {
+      setStatus(res.ok);
+      setSaved(true);
+      setTimeout(() => setSaved(false), 3000);
+    } else {
+      setError("NotAuthorized" in res.err ? "Not authorized" : "Failed to enable");
+    }
+    setSaving(false);
+  }
+
+  async function handleDisable() {
+    setSaving(true); setError(null);
+    const res = await disableCkUSDC();
+    if ("ok" in res) {
+      const updated = await getCkUSDCStatus();
+      setStatus(updated);
+    } else {
+      setError("Failed to disable");
+    }
+    setSaving(false);
+  }
+
+  async function handleSetRate() {
+    const r = parseInt(newRate, 10);
+    if (!r || r <= 0) { setError("Rate must be > 0 cents"); return; }
+    setSaving(true); setError(null);
+    await setUsdcRate(BigInt(r));
+    const updated = await getCkUSDCStatus();
+    setStatus(updated);
+    setNewRate("");
+    setSaving(false);
+  }
+
+  async function handleConfirm() {
+    const bi = parseInt(blockIdx, 10);
+    const au = parseFloat(confirmAmt);
+    if (!bi || !confirmUnit || !au) { setError("All confirm fields required"); return; }
+    setConfirming(true); setError(null);
+    const amountE8s = BigInt(Math.round(au * 100_000_000));
+    const res = await confirmCkUSDCPayment(BigInt(bi), confirmUnit, amountE8s, confirmMemo || confirmUnit);
+    if ("ok" in res) {
+      setPayments(p => [...p, res.ok]);
+      setBlockIdx(""); setConfirmUnit(""); setConfirmAmt(""); setConfirmMemo("");
+    } else {
+      setError("PaymentFailed" in res.err ? res.err.PaymentFailed : "Confirmation failed");
+    }
+    setConfirming(false);
+  }
+
+  const labelStyle: React.CSSProperties = {
+    fontFamily: S.mono, fontSize: "0.58rem", letterSpacing: "0.08em",
+    color: S.inkLight, textTransform: "uppercase", display: "block", marginBottom: "0.3rem",
+  };
+  const inputStyle: React.CSSProperties = {
+    fontFamily: S.mono, fontSize: "0.78rem", border: `1px solid ${S.rule}`,
+    padding: "0.35rem 0.5rem", background: "#fff", color: S.ink,
+  };
+  const btnStyle = (disabled?: boolean): React.CSSProperties => ({
+    background: S.navy, color: "#fff", border: "none", fontFamily: S.mono,
+    fontSize: "0.6rem", letterSpacing: "0.1em", textTransform: "uppercase",
+    padding: "0.45rem 1.25rem", cursor: disabled ? "default" : "pointer", opacity: disabled ? 0.6 : 1,
+  });
+
+  if (loading) return <p style={{ fontFamily: S.sans, color: S.inkLight }}>Loading ckUSDC…</p>;
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: "2rem" }}>
+
+      {/* Status + enable/disable */}
+      <div style={{ border: `1px solid ${S.rule}`, padding: "1.5rem", background: "#fff" }}>
+        <div style={{ fontFamily: S.mono, fontSize: "0.62rem", letterSpacing: "0.1em", color: S.inkLight, textTransform: "uppercase", marginBottom: "1rem" }}>
+          ckUSDC Payments
+          {status?.enabled && (
+            <span style={{ marginLeft: "1rem", color: S.sage }}>● Enabled</span>
+          )}
+          {status && !status.enabled && (
+            <span style={{ marginLeft: "1rem", color: S.rust }}>● Disabled</span>
+          )}
+        </div>
+
+        {(!status || !status.enabled) && (
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 120px 120px", gap: "0.75rem", marginBottom: "1rem" }}>
+            <div>
+              <label style={labelStyle}>Treasury Principal (residents send ckUSDC here)</label>
+              <input value={principal} onChange={e => setPrincipal(e.target.value)} style={{ ...inputStyle, width: "100%" }} placeholder="aaaaa-aa..." />
+            </div>
+            <div>
+              <label style={labelStyle}>USDC Rate (cents)</label>
+              <input value={rateCents} onChange={e => setRateCents(e.target.value)} style={{ ...inputStyle, width: "100%" }} type="number" min="1" />
+              <div style={{ fontFamily: S.mono, fontSize: "0.55rem", color: S.inkLight, marginTop: "0.2rem" }}>e.g. 100 = $1.00/USDC</div>
+            </div>
+            <div>
+              <label style={labelStyle}>Platform fee (bps)</label>
+              <input value={feeBps} onChange={e => setFeeBps(e.target.value)} style={{ ...inputStyle, width: "100%" }} type="number" min="0" />
+              <div style={{ fontFamily: S.mono, fontSize: "0.55rem", color: S.inkLight, marginTop: "0.2rem" }}>10 = 0.1%</div>
+            </div>
+          </div>
+        )}
+
+        {error && <p style={{ fontFamily: S.sans, fontSize: "0.8rem", color: S.rust, marginBottom: "0.5rem" }}>{error}</p>}
+
+        <div style={{ display: "flex", gap: "1rem", alignItems: "center" }}>
+          {(!status || !status.enabled) ? (
+            <button onClick={handleEnable} disabled={saving || !principal} style={btnStyle(saving || !principal)}>
+              {saving ? "Enabling…" : "Enable ckUSDC"}
+            </button>
+          ) : (
+            <button onClick={handleDisable} disabled={saving} style={{ ...btnStyle(saving), background: S.rust }}>
+              {saving ? "Disabling…" : "Disable"}
+            </button>
+          )}
+          {saved && <span style={{ fontFamily: S.mono, fontSize: "0.6rem", color: S.sage }}>Saved</span>}
+        </div>
+
+        {/* Active config summary */}
+        {status?.enabled && (
+          <div style={{ marginTop: "1.25rem", padding: "1rem", background: "#F9F6F0", border: `1px solid ${S.rule}` }}>
+            <div style={{ fontFamily: S.mono, fontSize: "0.6rem", color: S.inkLight, marginBottom: "0.75rem", textTransform: "uppercase", letterSpacing: "0.08em" }}>
+              Payment Address
+            </div>
+            <div style={{ fontFamily: S.mono, fontSize: "0.8rem", wordBreak: "break-all", color: S.ink, marginBottom: "0.5rem" }}>
+              {status.treasuryPrincipal}
+            </div>
+            <div style={{ fontFamily: S.mono, fontSize: "0.6rem", color: S.inkLight }}>
+              Include your unit ID as the transfer memo · Rate: ${(Number(status.usdcRateCents) / 100).toFixed(2)}/USDC · Platform fee: {Number(status.platformFeeBps) / 100}%
+            </div>
+
+            {/* Update rate */}
+            <div style={{ marginTop: "1rem", display: "flex", gap: "0.75rem", alignItems: "flex-end" }}>
+              <div>
+                <label style={labelStyle}>Update USDC rate (cents)</label>
+                <input value={newRate} onChange={e => setNewRate(e.target.value)} style={{ ...inputStyle, width: "120px" }} type="number" min="1" placeholder={status.usdcRateCents.toString()} />
+              </div>
+              <button onClick={handleSetRate} disabled={saving || !newRate} style={btnStyle(saving || !newRate)}>
+                Update Rate
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Manual payment confirmation */}
+      {status?.enabled && (
+        <div style={{ border: `1px solid ${S.rule}`, padding: "1.5rem", background: "#fff" }}>
+          <div style={{ fontFamily: S.mono, fontSize: "0.62rem", letterSpacing: "0.1em", color: S.inkLight, textTransform: "uppercase", marginBottom: "1rem" }}>
+            Confirm Payment (Board)
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "0.75rem", marginBottom: "0.75rem" }}>
+            <div>
+              <label style={labelStyle}>Block Index</label>
+              <input value={blockIdx} onChange={e => setBlockIdx(e.target.value)} style={{ ...inputStyle, width: "100%" }} type="number" placeholder="12345678" />
+            </div>
+            <div>
+              <label style={labelStyle}>Unit ID</label>
+              <input value={confirmUnit} onChange={e => setConfirmUnit(e.target.value)} style={{ ...inputStyle, width: "100%" }} placeholder="10A" />
+            </div>
+            <div>
+              <label style={labelStyle}>Amount (USDC)</label>
+              <input value={confirmAmt} onChange={e => setConfirmAmt(e.target.value)} style={{ ...inputStyle, width: "100%" }} type="number" placeholder="150.00" />
+            </div>
+            <div>
+              <label style={labelStyle}>Memo (optional)</label>
+              <input value={confirmMemo} onChange={e => setConfirmMemo(e.target.value)} style={{ ...inputStyle, width: "100%" }} placeholder="Unit ID or note" />
+            </div>
+          </div>
+          <button onClick={handleConfirm} disabled={confirming || !blockIdx || !confirmUnit || !confirmAmt} style={btnStyle(confirming || !blockIdx || !confirmUnit || !confirmAmt)}>
+            {confirming ? "Confirming…" : "Confirm Payment"}
+          </button>
+        </div>
+      )}
+
+      {/* Payment history */}
+      <div>
+        <div style={{ fontFamily: S.mono, fontSize: "0.62rem", letterSpacing: "0.1em", color: S.inkLight, textTransform: "uppercase", marginBottom: "0.75rem" }}>
+          ckUSDC Payments — {payments.length} confirmed
+        </div>
+        {payments.length === 0 ? (
+          <div style={{ padding: "2rem", border: `1px dashed ${S.rule}`, textAlign: "center", fontFamily: S.mono, fontSize: "0.7rem", color: S.inkLight }}>
+            No ckUSDC payments confirmed yet
+          </div>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+            {payments.map(p => (
+              <div key={p.id} style={{ border: `1px solid ${S.rule}`, padding: "0.875rem 1rem", display: "flex", justifyContent: "space-between", alignItems: "center", background: "#fff" }}>
+                <div>
+                  <div style={{ fontFamily: S.mono, fontSize: "0.6rem", color: S.inkLight, marginBottom: "0.2rem" }}>
+                    {p.id} · Unit {p.unitId} · Block #{p.blockIndex.toString()}
+                  </div>
+                  <div style={{ fontFamily: S.sans, fontSize: "0.85rem" }}>
+                    {(Number(p.amountUsdc) / 100_000_000).toFixed(2)} USDC
+                  </div>
+                  {p.memo && <div style={{ fontFamily: S.mono, fontSize: "0.55rem", color: S.inkLight }}>memo: {p.memo}</div>}
+                </div>
+                <div style={{ textAlign: "right" }}>
+                  <div style={{ fontFamily: S.serif, fontWeight: 700, fontSize: "1rem", color: S.sage }}>
+                    ${(Number(p.amountCents) / 100).toFixed(2)}
+                  </div>
+                  <div style={{ fontFamily: S.mono, fontSize: "0.55rem", color: S.inkLight }}>
+                    {new Date(Number(p.confirmedAt) / 1_000_000).toLocaleDateString()}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ─── Main page ────────────────────────────────────────────────────────────────
 
 export default function TreasuryPage() {
@@ -1027,7 +1270,7 @@ export default function TreasuryPage() {
   const [totalOutstanding, setTotalOutstanding] = useState<bigint | null>(null);
   const [loading,          setLoading]          = useState(true);
   const [unitId,           setUnitId]           = useState<string | null>(null);
-  const [activeTab,        setActiveTab]        = useState<"assessments" | "history" | "reminders" | "reports" | "collections" | "quickbooks">("assessments");
+  const [activeTab,        setActiveTab]        = useState<"assessments" | "history" | "reminders" | "reports" | "collections" | "quickbooks" | "ckusdc">("assessments");
 
   function reload(uid: string) {
     Promise.all([
@@ -1100,6 +1343,7 @@ export default function TreasuryPage() {
         <button style={tabStyle(activeTab === "reports")}      onClick={() => setActiveTab("reports")}>Reports</button>
         <button style={tabStyle(activeTab === "collections")}  onClick={() => setActiveTab("collections")}>Collections</button>
         <button style={tabStyle(activeTab === "quickbooks")}   onClick={() => setActiveTab("quickbooks")}>QuickBooks</button>
+        <button style={tabStyle(activeTab === "ckusdc")}       onClick={() => setActiveTab("ckusdc")}>ckUSDC</button>
       </div>
 
       {/* Assessments tab */}
@@ -1206,6 +1450,9 @@ export default function TreasuryPage() {
 
       {/* QuickBooks tab */}
       {activeTab === "quickbooks" && <QBOPanel />}
+
+      {/* ckUSDC tab */}
+      {activeTab === "ckusdc" && <CkUSDCPanel />}
 
       {/* Board policy panel */}
       <PolicyPanel />

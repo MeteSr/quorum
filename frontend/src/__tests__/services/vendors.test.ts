@@ -22,6 +22,7 @@ import {
   getVendorsByCategory,
   getJobsForVendor,
   getExpiringCOIs,
+  bulkImportVendors,
 } from "@/services/vendors";
 
 const NOW = BigInt(1_700_000_000_000_000_000);
@@ -72,6 +73,11 @@ function makeMockActor(overrides: Record<string, any> = {}) {
     getVendorsByCategory: vi.fn().mockResolvedValue([MOCK_VENDOR]),
     getJobsForVendor:     vi.fn().mockResolvedValue([MOCK_VENDOR_JOB]),
     getExpiringCOIs:      vi.fn().mockResolvedValue([{ ...MOCK_VENDOR, coi: [MOCK_COI] }]),
+    bulkImportVendors:    vi.fn().mockResolvedValue({
+      succeeded: BigInt(3),
+      failed:    BigInt(1),
+      errors:    ["Row missing name"],
+    }),
     ...overrides,
   };
 }
@@ -292,5 +298,47 @@ describe("vendors service — getExpiringCOIs", () => {
       makeMockActor({ getExpiringCOIs: vi.fn().mockResolvedValue([]) }) as any
     );
     expect(await getExpiringCOIs(7)).toEqual([]);
+  });
+});
+
+// ─── bulkImportVendors (#22) ──────────────────────────────────────────────────
+
+describe("vendors service — bulkImportVendors", () => {
+  beforeEach(() => vi.mocked(Actor.createActor).mockReturnValue(makeMockActor() as any));
+
+  it("bulkImportVendors returns result with succeeded count", async () => {
+    const rows = [
+      { name: "Acme Plumbing", trade: { Plumbing: null } as any, contact: "555-000-0001" },
+      { name: "Green Lawns",   trade: { Landscaping: null } as any, contact: "555-000-0002" },
+      { name: "CleanCo",       trade: { Cleaning: null } as any, contact: "555-000-0003" },
+    ];
+    const result = await bulkImportVendors(rows);
+    expect(result.succeeded).toBe(BigInt(3));
+  });
+
+  it("bulkImportVendors returns errors array", async () => {
+    const rows = [{ name: "", trade: { Other: null } as any, contact: "" }];
+    const result = await bulkImportVendors(rows);
+    expect(result.errors).toContain("Row missing name");
+    expect(result.failed).toBe(BigInt(1));
+  });
+
+  it("bulkImportVendors passes rows to actor", async () => {
+    const spy = vi.fn().mockResolvedValue({ succeeded: BigInt(1), failed: BigInt(0), errors: [] });
+    vi.mocked(Actor.createActor).mockReturnValue(makeMockActor({ bulkImportVendors: spy }) as any);
+    const rows = [{ name: "Acme Plumbing", trade: { Plumbing: null } as any, contact: "555-000-0001" }];
+    await bulkImportVendors(rows);
+    expect(spy).toHaveBeenCalledWith(rows);
+  });
+
+  it("bulkImportVendors returns zero-succeeded when canister not deployed", async () => {
+    (process.env as any).CANISTER_ID_VENDORS = "";
+    vi.resetModules();
+    const { bulkImportVendors: fn } = await import("@/services/vendors");
+    const rows = [{ name: "Acme Plumbing", trade: { Plumbing: null } as any, contact: "555-000-0001" }];
+    const result = await fn(rows);
+    expect(result.succeeded).toBe(BigInt(0));
+    expect(result.errors).toContain("canister not deployed");
+    (process.env as any).CANISTER_ID_VENDORS = "rdmx6-jaaaa-aaaah-test-cai";
   });
 });

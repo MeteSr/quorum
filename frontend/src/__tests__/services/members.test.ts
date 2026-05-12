@@ -31,6 +31,7 @@ import {
   registerPushToken,
   removePushToken,
   getPushTokens,
+  bulkImportUnits,
 } from "@/services/members";
 
 const MOCK_COMMUNITY = {
@@ -102,6 +103,12 @@ function makeMockActor(overrides: Record<string, any> = {}) {
     registerPushToken:        vi.fn().mockResolvedValue(undefined),
     removePushToken:          vi.fn().mockResolvedValue(undefined),
     getPushTokens:            vi.fn().mockResolvedValue({ ok: ["ExponentPushToken[xxx]"] }),
+    bulkImportUnits:          vi.fn().mockResolvedValue({
+      succeeded: BigInt(2),
+      failed:    BigInt(0),
+      codes:     [["10A", "IMPORT-10A-123"], ["11B", "IMPORT-11B-456"]],
+      errors:    [],
+    }),
     ...overrides,
   };
 }
@@ -381,5 +388,51 @@ describe("members service — getPushTokens", () => {
     );
     const result = await getPushTokens();
     expect((result as any).err).toHaveProperty("NotAuthorized");
+  });
+});
+
+// ─── bulkImportUnits (#22) ────────────────────────────────────────────────────
+
+describe("members service — bulkImportUnits", () => {
+  beforeEach(() => vi.mocked(Actor.createActor).mockReturnValue(makeMockActor() as any));
+
+  it("bulkImportUnits returns result with succeeded count", async () => {
+    const rows = [
+      { unitId: "10A", ownerName: "Alice", email: "alice@test.com" },
+      { unitId: "11B", ownerName: "Bob",   email: "bob@test.com"   },
+    ];
+    const result = await bulkImportUnits(rows);
+    expect(result.succeeded).toBe(BigInt(2));
+    expect(result.failed).toBe(BigInt(0));
+  });
+
+  it("bulkImportUnits returns invite codes array", async () => {
+    const rows = [{ unitId: "10A", ownerName: "Alice", email: "alice@test.com" }];
+    const result = await bulkImportUnits(rows);
+    expect(result.codes).toHaveLength(2);
+    expect(result.codes[0][0]).toBe("10A");
+    expect(result.codes[0][1]).toContain("IMPORT-10A");
+  });
+
+  it("bulkImportUnits passes rows to actor", async () => {
+    const spy = vi.fn().mockResolvedValue({
+      succeeded: BigInt(1), failed: BigInt(0), codes: [["10A", "IMPORT-10A-789"]], errors: [],
+    });
+    vi.mocked(Actor.createActor).mockReturnValue(makeMockActor({ bulkImportUnits: spy }) as any);
+    const rows = [{ unitId: "10A", ownerName: "Alice", email: "alice@test.com" }];
+    await bulkImportUnits(rows);
+    expect(spy).toHaveBeenCalledWith(rows);
+  });
+
+  it("bulkImportUnits returns empty result when canister not deployed", async () => {
+    (process.env as any).CANISTER_ID_MEMBERS = "";
+    vi.resetModules();
+    const { bulkImportUnits: fn } = await import("@/services/members");
+    const rows = [{ unitId: "10A", ownerName: "Alice", email: "alice@test.com" }];
+    const result = await fn(rows);
+    expect(result.succeeded).toBe(BigInt(0));
+    expect(result.failed).toBe(BigInt(1));
+    expect(result.errors).toContain("canister not deployed");
+    (process.env as any).CANISTER_ID_MEMBERS = "rdmx6-jaaaa-aaaah-test-cai";
   });
 });

@@ -21,6 +21,7 @@ import MarketplacePage  from "@/pages/MarketplacePage";
 import ElectionsPage       from "@/pages/ElectionsPage";
 import MemberBenefitsPage  from "@/pages/MemberBenefitsPage";
 import MembersPage         from "@/pages/MembersPage";
+import MigrationPage        from "@/pages/MigrationPage";
 import PWAInstallBanner     from "@/components/PWAInstallBanner";
 import ShareView            from "@/pages/ShareView";
 import PublicPortalPage     from "@/pages/PublicPortalPage";
@@ -52,6 +53,7 @@ const NAV_TABS = [
   { to: "/elections",    label: "Elections"     },
   { to: "/benefits",     label: "Benefits"      },
   { to: "/members",      label: "Members"       },
+  { to: "/migration",    label: "Migration"     },
 ] as const;
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
@@ -134,6 +136,7 @@ function AppShell() {
             <Route path="/elections"     element={<ProtectedRoute><ElectionsPage /></ProtectedRoute>} />
             <Route path="/benefits"      element={<ProtectedRoute><MemberBenefitsPage /></ProtectedRoute>} />
             <Route path="/members"       element={<ProtectedRoute><MembersPage /></ProtectedRoute>} />
+            <Route path="/migration"     element={<ProtectedRoute><MigrationPage /></ProtectedRoute>} />
             <Route path="*"              element={<Navigate to="/" replace />} />
           </Routes>
         )}
