@@ -7,6 +7,7 @@
 
 import Array     "mo:core/Array";
 import Blob      "mo:core/Blob";
+import Buffer    "mo:core/Buffer";
 import Iter      "mo:core/Iter";
 import Map       "mo:core/Map";
 import Nat       "mo:core/Nat";
@@ -501,23 +502,29 @@ persistent actor Treasury {
     let day30  : Int = 30 * DAY_NS;
     let day60  : Int = 60 * DAY_NS;
     let day90  : Int = 90 * DAY_NS;
-    var current  : [AgingBucket] = [];
-    var d31_60   : [AgingBucket] = [];
-    var d61_90   : [AgingBucket] = [];
-    var d90plus  : [AgingBucket] = [];
-    var total    : Nat = 0;
+    let currentBuf = Buffer.Buffer<AgingBucket>(4);
+    let d31_60Buf  = Buffer.Buffer<AgingBucket>(4);
+    let d61_90Buf  = Buffer.Buffer<AgingBucket>(4);
+    let d90plusBuf = Buffer.Buffer<AgingBucket>(4);
+    var total      : Nat = 0;
     for (a in Map.values(assessments)) {
       if (a.status == #Outstanding) {
         let overdue : Int = now - a.dueDate;
         let b : AgingBucket = { unitId = a.unitId; amountCents = a.amountCents };
         total += a.amountCents;
-        if      (overdue < day30) { current := Array.append(current, [b]) }
-        else if (overdue < day60) { d31_60  := Array.append(d31_60,  [b]) }
-        else if (overdue < day90) { d61_90  := Array.append(d61_90,  [b]) }
-        else                      { d90plus := Array.append(d90plus,  [b]) };
+        if      (overdue < day30) { currentBuf.add(b) }
+        else if (overdue < day60) { d31_60Buf.add(b) }
+        else if (overdue < day90) { d61_90Buf.add(b) }
+        else                      { d90plusBuf.add(b) };
       };
     };
-    { current; days31_60 = d31_60; days61_90 = d61_90; days90plus = d90plus; totalOutstandingCents = total }
+    {
+      current    = Buffer.toArray(currentBuf);
+      days31_60  = Buffer.toArray(d31_60Buf);
+      days61_90  = Buffer.toArray(d61_90Buf);
+      days90plus = Buffer.toArray(d90plusBuf);
+      totalOutstandingCents = total;
+    }
   };
 
   public query func getReserveFundReport() : async ReserveFundReport {

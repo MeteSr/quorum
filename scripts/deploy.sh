@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-DEPLOY_SCRIPT_VERSION="0.8.1"
+DEPLOY_SCRIPT_VERSION="0.8.2"
 ENV=${1:-local}
 
 echo "============================================"
