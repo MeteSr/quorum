@@ -21,6 +21,17 @@ persistent actor Announcements {
 
   public type Priority = { #Normal; #Urgent };
 
+  public type Severity = { #Info; #Warning; #Emergency };
+
+  public type Broadcast = {
+    id:       Text;
+    title:    Text;
+    body:     Text;
+    severity: Severity;
+    sentBy:   Principal;
+    sentAt:   Time.Time;
+  };
+
   public type Announcement = {
     id:          Text;
     title:       Text;
@@ -39,14 +50,21 @@ persistent actor Announcements {
 
   // ─── Stable State ─────────────────────────────────────────────────────────────
 
-  private var counter : Nat = 0;
+  private var counter          : Nat = 0;
+  private var broadcastCounter : Nat = 0;
   private let announcements = Map.empty<Text, Announcement>();
+  private let broadcasts    = Map.empty<Text, Broadcast>();
 
   // ─── Helpers ─────────────────────────────────────────────────────────────────
 
   private func nextId() : Text {
     counter += 1;
     "ANN_" # Nat.toText(counter)
+  };
+
+  private func nextBroadcastId() : Text {
+    broadcastCounter += 1;
+    "BCAST_" # Nat.toText(broadcastCounter)
   };
 
   // ─── Post / Delete ────────────────────────────────────────────────────────────
@@ -113,5 +131,40 @@ persistent actor Announcements {
 
   public query func getAll() : async [Announcement] {
     Iter.toArray(Map.values(announcements))
+  };
+
+  // ─── Emergency Broadcasts ─────────────────────────────────────────────────────
+
+  public shared(msg) func broadcastEmergency(
+    title    : Text,
+    body     : Text,
+    severity : Severity
+  ) : async Result.Result<Broadcast, Error> {
+    if (Principal.isAnonymous(msg.caller)) return #err(#NotAuthorized);
+    if (Text.size(title) == 0) return #err(#InvalidInput("title required"));
+    if (Text.size(body)  == 0) return #err(#InvalidInput("body required"));
+    let b : Broadcast = {
+      id       = nextBroadcastId();
+      title;
+      body;
+      severity;
+      sentBy   = msg.caller;
+      sentAt   = Time.now();
+    };
+    Map.add(broadcasts, Text.compare, b.id, b);
+    #ok(b)
+  };
+
+  public query func getBroadcasts() : async [Broadcast] {
+    Iter.toArray(Map.values(broadcasts))
+  };
+
+  public query func getRecentBroadcasts(days : Nat) : async [Broadcast] {
+    let now      = Time.now();
+    let windowNs = days * 86_400 * 1_000_000_000;
+    let cutoffNs : Int = now - windowNs;
+    Array.filter<Broadcast>(Iter.toArray(Map.values(broadcasts)), func(b) {
+      b.sentAt >= cutoffNs
+    })
   };
 };

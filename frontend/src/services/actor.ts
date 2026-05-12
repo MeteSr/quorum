@@ -48,6 +48,10 @@ export function resetAgent() {
   _agent = null;
 }
 
+export function setAgentForTesting(agent: HttpAgent) {
+  _agent = agent;
+}
+
 export async function loginWithLocalIdentity(): Promise<string> {
   if (!IS_LOCAL) throw new Error("loginWithLocalIdentity() must not be called in production");
   const seed = new Uint8Array(32);

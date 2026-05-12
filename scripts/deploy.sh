@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-DEPLOY_SCRIPT_VERSION="0.7.2"
+DEPLOY_SCRIPT_VERSION="0.7.6"
 ENV=${1:-local}
 
 echo "============================================"
@@ -128,7 +128,7 @@ if [ "${DRY_RUN:-0}" = "1" ]; then
 fi
 
 # ── Canister deployment ───────────────────────────────────────────────────────
-CANISTERS=(members governance treasury documents announcements maintenance violations meetings calendar arc parking vendors)
+CANISTERS=(members governance treasury documents announcements maintenance violations meetings calendar arc parking vendors discussions)
 DEPLOY_PRINCIPAL=$(icp identity principal)
 
 # Seed icp-cli state from canister_ids.json on CI
@@ -181,6 +181,21 @@ if [ "$ENV" = "local" ]; then
     echo "  → $canister"
     icp deploy "$canister" -e local 2>&1 | tail -3
   done
+
+  echo "▶ Saving local canister IDs to .dfx/local/canister_ids.json..."
+  mkdir -p ".dfx/local"
+  python3 - <<'PYEOF'
+import json, subprocess
+ids = {}
+for name in ["members","governance","treasury","documents","announcements","maintenance","violations","meetings","calendar","arc","parking","vendors","discussions"]:
+    result = subprocess.run(["icp","canister","status",name,"-e","local","--id-only"],
+                            capture_output=True, text=True)
+    cid = result.stdout.strip()
+    if cid:
+        ids[name] = {"local": cid}
+json.dump(ids, open(".dfx/local/canister_ids.json","w"), indent=2)
+print(f"  ✓ Saved {len(ids)} canister IDs")
+PYEOF
 else
   if [ ${#CANISTERS_TO_CREATE[@]} -gt 0 ]; then
     echo "▶ Creating ${#CANISTERS_TO_CREATE[@]} new canister slot(s)..."
@@ -235,7 +250,7 @@ try:
     existing = json.load(open("canister_ids.json"))
 except Exception:
     existing = {}
-for name in ["members","governance","treasury","documents","announcements","maintenance","violations","meetings","calendar","arc","parking","vendors","frontend"]:
+for name in ["members","governance","treasury","documents","announcements","maintenance","violations","meetings","calendar","arc","parking","vendors","discussions","frontend"]:
     result = subprocess.run(["icp","canister","id",name,"-e",env],
                             capture_output=True, text=True)
     cid = result.stdout.strip()
