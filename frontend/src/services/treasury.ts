@@ -306,14 +306,14 @@ export async function getLateFeePolicy(): Promise<LateFeePolicy | null> {
   const actor = await createActor() as any;
   if (!actor) return null;
   const result = await actor.getLateFeePolicy() as [] | [LateFeePolicy];
-  return result.length > 0 ? result[0] : null;
+  return result[0] ?? null;
 }
 
 export async function getReminderPolicy(): Promise<ReminderPolicy | null> {
   const actor = await createActor() as any;
   if (!actor) return null;
   const result = await actor.getReminderPolicy() as [] | [ReminderPolicy];
-  return result.length > 0 ? result[0] : null;
+  return result[0] ?? null;
 }
 
 export async function setLateFeePolicy(policy: LateFeePolicy): Promise<void> {
