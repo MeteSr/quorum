@@ -105,7 +105,7 @@ persistent actor Marketplace {
     if (Text.size(title) == 0)       return #err(#InvalidInput("title required"));
     if (Text.size(description) == 0) return #err(#InvalidInput("description required"));
     if (Text.size(contactInfo) == 0) return #err(#InvalidInput("contactInfo required"));
-    if (Array.size(photos) > 5)      return #err(#TooManyPhotos);
+    if (photos.size() > 5)      return #err(#TooManyPhotos);
     let l : Listing = {
       id          = nextListingId();
       title;
@@ -139,12 +139,12 @@ persistent actor Marketplace {
       case null    { #err(#NotFound) };
       case (?l) {
         if (l.postedBy != msg.caller) return #err(#NotAuthorized);
-        switch l.status {
+        switch (l.status) {
           case (#Active) {};
           case _         { return #err(#InvalidInput("only active listings can be edited")) };
         };
         if (Text.size(title) == 0)  return #err(#InvalidInput("title required"));
-        if (Array.size(photos) > 5) return #err(#TooManyPhotos);
+        if (photos.size() > 5) return #err(#TooManyPhotos);
         let updated : Listing = {
           id          = l.id;
           title;
@@ -185,7 +185,7 @@ persistent actor Marketplace {
       case null  { #err(#NotFound) };
       case (?l) {
         if (l.postedBy != msg.caller) return #err(#NotAuthorized);
-        switch l.status {
+        switch (l.status) {
           case (#Active) {};
           case _         { return #err(#InvalidInput("listing is not active")) };
         };
@@ -284,13 +284,13 @@ persistent actor Marketplace {
 
   public query func getListings() : async [Listing] {
     Array.filter<Listing>(Iter.toArray(Map.values(listings)), func(l) {
-      switch l.status { case (#Active) { true }; case _ { false } }
+      switch (l.status) { case (#Active) { true }; case _ { false } }
     })
   };
 
   public query func getListingsByCategory(category : ListingCategory) : async [Listing] {
     Array.filter<Listing>(Iter.toArray(Map.values(listings)), func(l) {
-      let active = switch l.status { case (#Active) { true }; case _ { false } };
+      let active = switch (l.status) { case (#Active) { true }; case _ { false } };
       if (not active) return false;
       switch (l.category, category) {
         case (#ForSale,  #ForSale)  { true };
@@ -320,12 +320,12 @@ persistent actor Marketplace {
 
   public query func metrics() : async MetricsResult {
     let all = Iter.toArray(Map.values(listings));
-    let active  = Array.filter<Listing>(all, func(l) { switch l.status { case (#Active) { true }; case _ { false } } });
+    let active  = Array.filter<Listing>(all, func(l) { switch (l.status) { case (#Active) { true }; case _ { false } } });
     let flagged = Array.filter<Listing>(all, func(l) { l.isFlagged });
     {
-      activeListings = Array.size(active);
-      totalListings  = Array.size(all);
-      flaggedCount   = Array.size(flagged);
+      activeListings = active.size();
+      totalListings  = all.size();
+      flaggedCount   = flagged.size();
     }
   };
 };
