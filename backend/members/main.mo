@@ -127,6 +127,7 @@ persistent actor Members {
   private let inviteCodes = Map.empty<Text, InviteCode>();
   private let shareLinks  = Map.empty<Text, ShareLink>();
   private let shareViews  = Map.empty<Text, ShareViewLog>(); // key: "SV_{counter}"
+  private let pushTokens  = Map.empty<Principal, Text>();    // FCM/APNs tokens (#42)
 
   // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -494,6 +495,26 @@ persistent actor Members {
     if (not isAdmin(msg.caller) and not isBoard(msg.caller)) return #err(#NotAuthorized);
     let all = Iter.toArray(Map.values(shareViews));
     #ok(Array.filter<ShareViewLog>(all, func(v) { v.token == token }))
+  };
+
+  // ─── Push Tokens (#42) ───────────────────────────────────────────────────────
+
+  // Any registered member may store their device push token.
+  public shared(msg) func registerPushToken(token : Text) : async () {
+    switch (Map.get(members, Principal.compare, msg.caller)) {
+      case null  {};
+      case (?_)  { Map.add(pushTokens, Principal.compare, msg.caller, token) };
+    }
+  };
+
+  public shared(msg) func removePushToken() : async () {
+    ignore Map.remove(pushTokens, Principal.compare, msg.caller);
+  };
+
+  // Board-only: retrieve all device tokens to fan out push notifications.
+  public shared(msg) func getPushTokens() : async Result.Result<[Text], Error> {
+    if (not isAdmin(msg.caller) and not isBoard(msg.caller)) return #err(#NotAuthorized);
+    #ok(Iter.toArray(Map.values(pushTokens)))
   };
 
   // ─── Queries ─────────────────────────────────────────────────────────────────

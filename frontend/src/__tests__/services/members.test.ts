@@ -28,6 +28,9 @@ import {
   setPageBlocks,
   getWebsiteConfig,
   getPublicProfile,
+  registerPushToken,
+  removePushToken,
+  getPushTokens,
 } from "@/services/members";
 
 const MOCK_COMMUNITY = {
@@ -96,6 +99,9 @@ function makeMockActor(overrides: Record<string, any> = {}) {
     setPageBlocks:            vi.fn().mockResolvedValue({ ok: MOCK_WEBSITE_CONFIG }),
     getWebsiteConfig:         vi.fn().mockResolvedValue({ ok: MOCK_WEBSITE_CONFIG }),
     getPublicProfile:         vi.fn().mockResolvedValue([MOCK_PUBLIC_PROFILE]),
+    registerPushToken:        vi.fn().mockResolvedValue(undefined),
+    removePushToken:          vi.fn().mockResolvedValue(undefined),
+    getPushTokens:            vi.fn().mockResolvedValue({ ok: ["ExponentPushToken[xxx]"] }),
     ...overrides,
   };
 }
@@ -325,5 +331,55 @@ describe("members service — getPublicProfile", () => {
       makeMockActor({ getPublicProfile: vi.fn().mockResolvedValue([]) }) as any
     );
     expect(await getPublicProfile()).toBeNull();
+  });
+});
+
+// ─── Push Tokens (#42) ────────────────────────────────────────────────────────
+
+describe("members service — registerPushToken", () => {
+  beforeEach(() => vi.mocked(Actor.createActor).mockReturnValue(makeMockActor() as any));
+
+  it("calls actor with the provided token string", async () => {
+    const spy = vi.fn().mockResolvedValue(undefined);
+    vi.mocked(Actor.createActor).mockReturnValue(makeMockActor({ registerPushToken: spy }) as any);
+    await registerPushToken("ExponentPushToken[abc123]");
+    expect(spy).toHaveBeenCalledWith("ExponentPushToken[abc123]");
+  });
+
+  it("resolves without error when canister is absent", async () => {
+    (process.env as any).CANISTER_ID_MEMBERS = "";
+    vi.resetModules();
+    const { registerPushToken: fn } = await import("@/services/members");
+    await expect(fn("token")).resolves.toBeUndefined();
+    (process.env as any).CANISTER_ID_MEMBERS = "rdmx6-jaaaa-aaaah-test-cai";
+  });
+});
+
+describe("members service — removePushToken", () => {
+  beforeEach(() => vi.mocked(Actor.createActor).mockReturnValue(makeMockActor() as any));
+
+  it("calls actor removePushToken with no arguments", async () => {
+    const spy = vi.fn().mockResolvedValue(undefined);
+    vi.mocked(Actor.createActor).mockReturnValue(makeMockActor({ removePushToken: spy }) as any);
+    await removePushToken();
+    expect(spy).toHaveBeenCalledWith();
+  });
+});
+
+describe("members service — getPushTokens", () => {
+  beforeEach(() => vi.mocked(Actor.createActor).mockReturnValue(makeMockActor() as any));
+
+  it("returns ok with array of token strings", async () => {
+    const result = await getPushTokens();
+    expect(result).toHaveProperty("ok");
+    expect((result as any).ok).toContain("ExponentPushToken[xxx]");
+  });
+
+  it("returns err NotAuthorized for non-board caller", async () => {
+    vi.mocked(Actor.createActor).mockReturnValue(
+      makeMockActor({ getPushTokens: vi.fn().mockResolvedValue({ err: { NotAuthorized: null } }) }) as any
+    );
+    const result = await getPushTokens();
+    expect((result as any).err).toHaveProperty("NotAuthorized");
   });
 });

@@ -103,6 +103,7 @@ export function idlFactory({ IDL }: { IDL: any }) {
   const ResultShareLinks   = IDL.Variant({ ok: IDL.Vec(ShareLink), err: Error });
   const ResultShareViews   = IDL.Variant({ ok: IDL.Vec(ShareViewLog), err: Error });
   const ResultWebsite      = IDL.Variant({ ok: WebsiteConfig,      err: Error });
+  const ResultTokens       = IDL.Variant({ ok: IDL.Vec(IDL.Text),   err: Error });
 
   return IDL.Service({
     initAdmin:                  IDL.Func([],                                        [ResultUnit],                    []),
@@ -134,6 +135,9 @@ export function idlFactory({ IDL }: { IDL: any }) {
     getMyShareLinks:            IDL.Func([],                                        [ResultShareLinks],              []),
     getShareLinkViews:          IDL.Func([IDL.Text],                                [ResultShareViews],              []),
     metrics:                    IDL.Func([],                                        [IDL.Record({ memberCount: IDL.Nat, shareLinkCount: IDL.Nat })], ["query"]),
+    registerPushToken:          IDL.Func([IDL.Text],                                [],                              []),
+    removePushToken:            IDL.Func([],                                        [],                              []),
+    getPushTokens:              IDL.Func([],                                        [ResultTokens],                  []),
   });
 }
 
@@ -375,4 +379,26 @@ export async function getPublicProfile(): Promise<PublicProfile | null> {
   if (!actor) return null;
   const result = await actor.getPublicProfile() as [] | [PublicProfile];
   return result[0] ?? null;
+}
+
+// ─── Push Tokens (#42) ───────────────────────────────────────────────────────
+
+export async function registerPushToken(
+  token: string
+): Promise<void> {
+  const actor = await createActor() as any;
+  if (!actor) return;
+  await actor.registerPushToken(token);
+}
+
+export async function removePushToken(): Promise<void> {
+  const actor = await createActor() as any;
+  if (!actor) return;
+  await actor.removePushToken();
+}
+
+export async function getPushTokens(): Promise<{ ok: string[] } | { err: MembersError }> {
+  const actor = await createActor() as any;
+  if (!actor) return { err: { NotAuthorized: null } };
+  return actor.getPushTokens();
 }
