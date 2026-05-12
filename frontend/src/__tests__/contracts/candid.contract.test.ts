@@ -19,6 +19,7 @@ import { idlFactory as parkingIdl }       from "../../services/parking";
 import { idlFactory as vendorsIdl }       from "../../services/vendors";
 import { idlFactory as discussionsIdl }  from "../../services/discussions";
 import { idlFactory as amenitiesIdl }    from "../../services/amenities";
+import { idlFactory as marketplaceIdl } from "../../services/marketplace";
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
 
@@ -853,6 +854,94 @@ describe("amenities IDL factory", () => {
     const m = methods.get("getWaitlistForSlot")!;
     expect(m.isQuery).toBe(true);
     expect(m.argTypes).toHaveLength(3);
+  });
+
+  test("metrics is a query with 0 args", () => {
+    const m = methods.get("metrics")!;
+    expect(m.isQuery).toBe(true);
+    expect(m.argTypes).toHaveLength(0);
+  });
+});
+
+// ─── Marketplace ──────────────────────────────────────────────────────────────
+
+describe("marketplace IDL factory", () => {
+  let methods: ReturnType<typeof extractService>;
+  beforeAll(() => { methods = extractService(marketplaceIdl); });
+
+  test("exposes all expected methods", () => {
+    const expected = [
+      "setAdmin",
+      "createListing",
+      "editListing",
+      "deleteListing",
+      "markSold",
+      "removeListing",
+      "flagListing",
+      "getListings",
+      "getListingsByCategory",
+      "getListing",
+      "getMyListings",
+      "getFlaggedListings",
+      "metrics",
+    ];
+    for (const name of expected) {
+      expect(methods.has(name), `missing method: ${name}`).toBe(true);
+    }
+  });
+
+  test("createListing is an update call with 8 args", () => {
+    const m = methods.get("createListing")!;
+    expect(m.isQuery).toBe(false);
+    expect(m.argTypes).toHaveLength(8);
+  });
+
+  test("editListing is an update call with 7 args", () => {
+    const m = methods.get("editListing")!;
+    expect(m.isQuery).toBe(false);
+    expect(m.argTypes).toHaveLength(7);
+  });
+
+  test("deleteListing is an update call with 1 arg", () => {
+    const m = methods.get("deleteListing")!;
+    expect(m.isQuery).toBe(false);
+    expect(m.argTypes).toHaveLength(1);
+  });
+
+  test("markSold is an update call with 1 arg", () => {
+    const m = methods.get("markSold")!;
+    expect(m.isQuery).toBe(false);
+    expect(m.argTypes).toHaveLength(1);
+  });
+
+  test("flagListing is an update call with 2 args", () => {
+    const m = methods.get("flagListing")!;
+    expect(m.isQuery).toBe(false);
+    expect(m.argTypes).toHaveLength(2);
+  });
+
+  test("getListings is a query with 0 args", () => {
+    const m = methods.get("getListings")!;
+    expect(m.isQuery).toBe(true);
+    expect(m.argTypes).toHaveLength(0);
+  });
+
+  test("getListingsByCategory is a query with 1 arg", () => {
+    const m = methods.get("getListingsByCategory")!;
+    expect(m.isQuery).toBe(true);
+    expect(m.argTypes).toHaveLength(1);
+  });
+
+  test("getMyListings is a query with 1 arg", () => {
+    const m = methods.get("getMyListings")!;
+    expect(m.isQuery).toBe(true);
+    expect(m.argTypes).toHaveLength(1);
+  });
+
+  test("getFlaggedListings is a query with 0 args", () => {
+    const m = methods.get("getFlaggedListings")!;
+    expect(m.isQuery).toBe(true);
+    expect(m.argTypes).toHaveLength(0);
   });
 
   test("metrics is a query with 0 args", () => {

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-DEPLOY_SCRIPT_VERSION="0.8.5"
+DEPLOY_SCRIPT_VERSION="0.9.0"
 ENV=${1:-local}
 
 echo "============================================"
@@ -128,7 +128,7 @@ if [ "${DRY_RUN:-0}" = "1" ]; then
 fi
 
 # ── Canister deployment ───────────────────────────────────────────────────────
-CANISTERS=(members governance treasury documents announcements maintenance violations meetings calendar arc parking vendors discussions amenities)
+CANISTERS=(members governance treasury documents announcements maintenance violations meetings calendar arc parking vendors discussions amenities marketplace)
 DEPLOY_PRINCIPAL=$(icp identity principal)
 
 # Seed icp-cli state from canister_ids.json on CI
@@ -187,7 +187,7 @@ if [ "$ENV" = "local" ]; then
   python3 - <<'PYEOF'
 import json, subprocess
 ids = {}
-for name in ["members","governance","treasury","documents","announcements","maintenance","violations","meetings","calendar","arc","parking","vendors","discussions","amenities"]:
+for name in ["members","governance","treasury","documents","announcements","maintenance","violations","meetings","calendar","arc","parking","vendors","discussions","amenities","marketplace"]:
     result = subprocess.run(["icp","canister","status",name,"-e","local","--id-only"],
                             capture_output=True, text=True)
     cid = result.stdout.strip()
@@ -250,7 +250,7 @@ try:
     existing = json.load(open("canister_ids.json"))
 except Exception:
     existing = {}
-for name in ["members","governance","treasury","documents","announcements","maintenance","violations","meetings","calendar","arc","parking","vendors","discussions","amenities","frontend"]:
+for name in ["members","governance","treasury","documents","announcements","maintenance","violations","meetings","calendar","arc","parking","vendors","discussions","amenities","marketplace","frontend"]:
     result = subprocess.run(["icp","canister","id",name,"-e",env],
                             capture_output=True, text=True)
     cid = result.stdout.strip()
