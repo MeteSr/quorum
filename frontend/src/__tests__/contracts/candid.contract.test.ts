@@ -59,6 +59,7 @@ describe("members IDL factory", () => {
       "getMyProfile",
       "getMyShareLinks",
       "getPublicProfile",
+      "getPushTokens",
       "getShareLink",
       "getShareLinkViews",
       "getWebsiteConfig",
@@ -66,6 +67,8 @@ describe("members IDL factory", () => {
       "isBoardMember",
       "metrics",
       "registerMember",
+      "registerPushToken",
+      "removePushToken",
       "resendWelcomePacket",
       "revokeInviteCode",
       "revokeShareLink",
@@ -115,6 +118,24 @@ describe("members IDL factory", () => {
     const m = methods.get("setPageBlocks")!;
     expect(m.isQuery).toBe(false);
     expect(m.argTypes).toHaveLength(1);
+  });
+
+  test("registerPushToken is an update call with 1 arg", () => {
+    const m = methods.get("registerPushToken")!;
+    expect(m.isQuery).toBe(false);
+    expect(m.argTypes).toHaveLength(1);
+  });
+
+  test("removePushToken is an update call with 0 args", () => {
+    const m = methods.get("removePushToken")!;
+    expect(m.isQuery).toBe(false);
+    expect(m.argTypes).toHaveLength(0);
+  });
+
+  test("getPushTokens is an update call with 0 args", () => {
+    const m = methods.get("getPushTokens")!;
+    expect(m.isQuery).toBe(false);
+    expect(m.argTypes).toHaveLength(0);
   });
 });
 

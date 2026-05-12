@@ -1,0 +1,68 @@
+{
+  "expo": {
+    "name": "Quorum HOA",
+    "slug": "quorum-hoa",
+    "version": "1.0.0",
+    "scheme": "quorumhoa",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#F4F1EB"
+    },
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.quorumhoa.app",
+      "infoPlist": {
+        "NSFaceIDUsageDescription": "Use Face ID to unlock Quorum",
+        "NSCameraUsageDescription": "Used for document scanning and photo uploads"
+      }
+    },
+    "android": {
+      "package": "com.quorumhoa.app",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#F4F1EB"
+      },
+      "permissions": [
+        "android.permission.USE_BIOMETRIC",
+        "android.permission.USE_FINGERPRINT",
+        "android.permission.CAMERA",
+        "android.permission.RECEIVE_BOOT_COMPLETED",
+        "android.permission.VIBRATE"
+      ]
+    },
+    "plugins": [
+      "expo-secure-store",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/notification-icon.png",
+          "color": "#1B2D4F",
+          "sounds": []
+        }
+      ],
+      [
+        "expo-local-authentication",
+        {
+          "faceIDPermission": "Use Face ID to unlock Quorum"
+        }
+      ]
+    ],
+    "extra": {
+      "iiUrl": "https://identity.ic0.app",
+      "icHost": "https://ic0.app",
+      "canisterIds": {
+        "members": "",
+        "announcements": "",
+        "documents": "",
+        "treasury": ""
+      },
+      "eas": {
+        "projectId": ""
+      }
+    }
+  }
+}
