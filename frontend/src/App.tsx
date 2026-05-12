@@ -16,6 +16,7 @@ import ArcPage           from "@/pages/ArcPage";
 import ParkingPage       from "@/pages/ParkingPage";
 import VendorsPage       from "@/pages/VendorsPage";
 import DiscussionsPage  from "@/pages/DiscussionsPage";
+import AmenitiesPage    from "@/pages/AmenitiesPage";
 
 const S = {
   paper:    "#F9F6F0",
@@ -39,6 +40,7 @@ const NAV_TABS = [
   { to: "/parking",       label: "Parking"       },
   { to: "/vendors",       label: "Vendors"       },
   { to: "/discussions",  label: "Discussions"   },
+  { to: "/amenities",    label: "Amenities"     },
 ] as const;
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
@@ -115,6 +117,7 @@ function AppShell() {
             <Route path="/parking"       element={<ProtectedRoute><ParkingPage /></ProtectedRoute>} />
             <Route path="/vendors"       element={<ProtectedRoute><VendorsPage /></ProtectedRoute>} />
             <Route path="/discussions"   element={<ProtectedRoute><DiscussionsPage /></ProtectedRoute>} />
+            <Route path="/amenities"     element={<ProtectedRoute><AmenitiesPage /></ProtectedRoute>} />
             <Route path="*"              element={<Navigate to="/" replace />} />
           </Routes>
         )}
