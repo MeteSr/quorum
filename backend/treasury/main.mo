@@ -6,15 +6,16 @@
  */
 
 import Array     "mo:core/Array";
+import Blob      "mo:core/Blob";
 import Iter      "mo:core/Iter";
 import Map       "mo:core/Map";
 import Nat       "mo:core/Nat";
+import Nat64     "mo:core/Nat64";
 import Option    "mo:core/Option";
 import Principal "mo:core/Principal";
 import Result    "mo:core/Result";
 import Text      "mo:core/Text";
 import Time      "mo:core/Time";
-import OutCall   "mo:caffeineai-http-outcalls/outcall";
 
 persistent actor Treasury {
 
@@ -97,6 +98,32 @@ persistent actor Treasury {
     #PaymentFailed: Text;
   };
 
+  // ─── IC HTTP Outcall interface ────────────────────────────────────────────────
+
+  public type HttpHeader   = { name : Text; value : Text };
+  public type HttpMethod   = { #get; #head; #post };
+  public type HttpResponse = { status : Nat; headers : [HttpHeader]; body : Blob };
+  public type TransformArgs = { response : HttpResponse; context : Blob };
+
+  let ic : actor {
+    http_request : shared ({
+      url               : Text;
+      max_response_bytes : ?Nat64;
+      headers           : [HttpHeader];
+      body              : ?Blob;
+      method            : HttpMethod;
+      transform         : ?{
+        function : shared query (TransformArgs) -> async HttpResponse;
+        context  : Blob;
+      };
+    }) -> async HttpResponse;
+  } = actor "aaaaa-aa";
+
+  // Strip non-deterministic headers for subnet consensus.
+  public query func transform(args : TransformArgs) : async HttpResponse {
+    { status = args.response.status; headers = []; body = args.response.body }
+  };
+
   // ─── Stable State ─────────────────────────────────────────────────────────────
 
   private var counter         : Nat = 0;
@@ -170,11 +197,6 @@ persistent actor Treasury {
       };
     };
     result
-  };
-
-  // Required by caffeineai-http-outcalls for subnet consensus.
-  public query func transform(args: OutCall.TransformationInput) : async OutCall.TransformationOutput {
-    OutCall.transform(args)
   };
 
   // ─── Wiring ───────────────────────────────────────────────────────────────────
@@ -293,19 +315,26 @@ persistent actor Treasury {
       "&metadata[unit_id]="       # urlEncode(assessment.unitId);
 
     try {
-      let json = await OutCall.httpPostRequest(
-        "https://api.stripe.com/v1/checkout/sessions",
-        [
-          { name = "content-type";  value = "application/x-www-form-urlencoded" },
-          { name = "authorization"; value = "Bearer " # cfg.secretKey },
+      let response = await (with cycles = 3_000_000_000) ic.http_request({
+        url               = "https://api.stripe.com/v1/checkout/sessions";
+        max_response_bytes = ?Nat64.fromNat(16_384);
+        headers           = [
+          { name = "content-type";   value = "application/x-www-form-urlencoded" },
+          { name = "authorization";  value = "Bearer " # cfg.secretKey },
           { name = "stripe-account"; value = cfg.stripeAccountId },
-        ],
-        body,
-        transform,
-      );
-      let id  = switch (jsonExtract(json, "id"))  { case (?v) v; case null return #err(#PaymentFailed("No session id in Stripe response")) };
-      let url = switch (jsonExtract(json, "url")) { case (?v) v; case null return #err(#PaymentFailed("No url in Stripe response")) };
-      #ok({ id; url })
+        ];
+        body              = ?Text.encodeUtf8(body);
+        method            = #post;
+        transform         = ?{ function = transform; context = Blob.fromArray([]) };
+      });
+      switch (Text.decodeUtf8(response.body)) {
+        case null    { #err(#PaymentFailed("Failed to decode Stripe response")) };
+        case (?json) {
+          let id  = switch (jsonExtract(json, "id"))  { case (?v) v; case null return #err(#PaymentFailed("No session id in Stripe response")) };
+          let url = switch (jsonExtract(json, "url")) { case (?v) v; case null return #err(#PaymentFailed("No url in Stripe response")) };
+          #ok({ id; url })
+        };
+      }
     } catch (_e) {
       #err(#PaymentFailed("Stripe checkout request failed"))
     }
@@ -333,47 +362,55 @@ persistent actor Treasury {
     };
 
     try {
-      let json = await OutCall.httpGetRequest(
-        "https://api.stripe.com/v1/checkout/sessions/" # sessionId,
-        [
+      let response = await (with cycles = 2_000_000_000) ic.http_request({
+        url               = "https://api.stripe.com/v1/checkout/sessions/" # sessionId;
+        max_response_bytes = ?Nat64.fromNat(16_384);
+        headers           = [
           { name = "authorization";  value = "Bearer " # cfg.secretKey },
           { name = "stripe-account"; value = cfg.stripeAccountId },
-        ],
-        transform,
-      );
+        ];
+        body              = null;
+        method            = #get;
+        transform         = ?{ function = transform; context = Blob.fromArray([]) };
+      });
 
-      let payStatus = switch (jsonExtract(json, "payment_status")) {
-        case (?s) s;
-        case null return #err(#PaymentFailed("Missing payment_status in session"));
-      };
-      if (payStatus != "paid") return #err(#PaymentFailed("Payment not complete: " # payStatus));
+      switch (Text.decodeUtf8(response.body)) {
+        case null    { return #err(#PaymentFailed("Failed to decode Stripe response")) };
+        case (?json) {
+          let payStatus = switch (jsonExtract(json, "payment_status")) {
+            case (?s) s;
+            case null return #err(#PaymentFailed("Missing payment_status in session"));
+          };
+          if (payStatus != "paid") return #err(#PaymentFailed("Payment not complete: " # payStatus));
 
-      let metaId = Option.get(jsonExtract(json, "assessment_id"), "");
-      if (metaId != assessmentId) return #err(#InvalidInput("Session/assessment mismatch"));
+          let metaId = Option.get(jsonExtract(json, "assessment_id"), "");
+          if (metaId != assessmentId) return #err(#InvalidInput("Session/assessment mismatch"));
 
-      let assessment = switch (Map.get(assessments, Text.compare, assessmentId)) {
-        case null  { return #err(#NotFound) };
-        case (?a)  { a };
-      };
+          let assessment = switch (Map.get(assessments, Text.compare, assessmentId)) {
+            case null  { return #err(#NotFound) };
+            case (?a)  { a };
+          };
 
-      let now      = Time.now();
-      let feeCents = assessment.amountCents * cfg.platformFeeBps / 10_000;
+          let now      = Time.now();
+          let feeCents = assessment.amountCents * cfg.platformFeeBps / 10_000;
 
-      let payment : DuesPayment = {
-        id               = nextPayId();
-        assessmentId;
-        unitId           = assessment.unitId;
-        amountCents      = assessment.amountCents;
-        platformFeeCents = feeCents;
-        stripePaymentId  = sessionId;
-        paidAt           = now;
-      };
-      Map.add(duesPayments, Text.compare, payment.id, payment);
-      Map.add(stripePayIds, Text.compare, sessionId, assessmentId);
+          let payment : DuesPayment = {
+            id               = nextPayId();
+            assessmentId;
+            unitId           = assessment.unitId;
+            amountCents      = assessment.amountCents;
+            platformFeeCents = feeCents;
+            stripePaymentId  = sessionId;
+            paidAt           = now;
+          };
+          Map.add(duesPayments, Text.compare, payment.id, payment);
+          Map.add(stripePayIds, Text.compare, sessionId, assessmentId);
 
-      let updated = { assessment with status = #Paid; paidAt = ?now };
-      Map.add(assessments, Text.compare, assessmentId, updated);
-      #ok(updated)
+          let updated = { assessment with status = #Paid; paidAt = ?now };
+          Map.add(assessments, Text.compare, assessmentId, updated);
+          #ok(updated)
+        };
+      }
     } catch (_e) {
       #err(#PaymentFailed("Stripe verification request failed"))
     }
