@@ -17,6 +17,11 @@ import {
   getMyProfile,
   registerMember,
   generateInviteCode,
+  createShareLink,
+  getShareLink,
+  revokeShareLink,
+  getMyShareLinks,
+  resendWelcomePacket,
 } from "@/services/members";
 
 const MOCK_COMMUNITY = {
@@ -24,6 +29,16 @@ const MOCK_COMMUNITY = {
   address: "100 Lakewood Blvd",
   totalUnits: BigInt(120),
   description: "A great community",
+  createdAt: BigInt(1_700_000_000_000_000_000),
+};
+
+const MOCK_SHARE_LINK = {
+  token:     "SHL-1-123456789",
+  scope:     { Demo: null },
+  createdBy: { toText: () => "test-principal" } as any,
+  expiresAt: [] as [],
+  isRevoked: false,
+  viewCount: BigInt(0),
   createdAt: BigInt(1_700_000_000_000_000_000),
 };
 
@@ -39,12 +54,17 @@ const MOCK_MEMBER = {
 
 function makeMockActor(overrides: Record<string, any> = {}) {
   return {
-    getCommunityProfile:  vi.fn().mockResolvedValue([MOCK_COMMUNITY]),
-    getAllMembers:         vi.fn().mockResolvedValue([MOCK_MEMBER]),
-    getActiveMembers:     vi.fn().mockResolvedValue([MOCK_MEMBER]),
-    getMyProfile:         vi.fn().mockResolvedValue([MOCK_MEMBER]),
-    registerMember:       vi.fn().mockResolvedValue({ ok: MOCK_MEMBER }),
-    generateInviteCode:   vi.fn().mockResolvedValue({ ok: { code: "TEST-CODE", maxUses: BigInt(10), usedCount: BigInt(0), expiresAt: [], createdBy: {} as any, createdAt: BigInt(0), isRevoked: false } }),
+    getCommunityProfile:      vi.fn().mockResolvedValue([MOCK_COMMUNITY]),
+    getAllMembers:             vi.fn().mockResolvedValue([MOCK_MEMBER]),
+    getActiveMembers:         vi.fn().mockResolvedValue([MOCK_MEMBER]),
+    getMyProfile:             vi.fn().mockResolvedValue([MOCK_MEMBER]),
+    registerMember:           vi.fn().mockResolvedValue({ ok: MOCK_MEMBER }),
+    generateInviteCode:       vi.fn().mockResolvedValue({ ok: { code: "TEST-CODE", maxUses: BigInt(10), usedCount: BigInt(0), expiresAt: [], createdBy: {} as any, createdAt: BigInt(0), isRevoked: false } }),
+    createShareLink:          vi.fn().mockResolvedValue({ ok: MOCK_SHARE_LINK }),
+    getShareLink:             vi.fn().mockResolvedValue({ ok: MOCK_SHARE_LINK }),
+    revokeShareLink:          vi.fn().mockResolvedValue({ ok: null }),
+    getMyShareLinks:          vi.fn().mockResolvedValue({ ok: [MOCK_SHARE_LINK] }),
+    resendWelcomePacket:      vi.fn().mockResolvedValue({ ok: null }),
     ...overrides,
   };
 }
@@ -131,5 +151,57 @@ describe("members service — generateInviteCode", () => {
     const result = await generateInviteCode("TEST-CODE", BigInt(10), []);
     expect(result).toHaveProperty("ok");
     expect((result as any).ok.code).toBe("TEST-CODE");
+  });
+});
+
+describe("members service — share links", () => {
+  beforeEach(() => vi.mocked(Actor.createActor).mockReturnValue(makeMockActor() as any));
+
+  it("createShareLink returns ok with the new link", async () => {
+    const result = await createShareLink({ Demo: null }, []);
+    expect(result).toHaveProperty("ok");
+    expect((result as any).ok.token).toBe("SHL-1-123456789");
+  });
+
+  it("getShareLink returns ok with the link data", async () => {
+    const result = await getShareLink("SHL-1-123456789");
+    expect(result).toHaveProperty("ok");
+    expect((result as any).ok.isRevoked).toBe(false);
+  });
+
+  it("getShareLink returns err when not found", async () => {
+    vi.mocked(Actor.createActor).mockReturnValue(
+      makeMockActor({ getShareLink: vi.fn().mockResolvedValue({ err: { NotFound: null } }) }) as any
+    );
+    const result = await getShareLink("INVALID");
+    expect(result).toHaveProperty("err");
+  });
+
+  it("revokeShareLink returns ok on success", async () => {
+    const result = await revokeShareLink("SHL-1-123456789");
+    expect(result).toHaveProperty("ok");
+  });
+
+  it("getMyShareLinks returns ok with array", async () => {
+    const result = await getMyShareLinks();
+    expect(result).toHaveProperty("ok");
+    expect((result as any).ok).toHaveLength(1);
+  });
+});
+
+describe("members service — resendWelcomePacket", () => {
+  beforeEach(() => vi.mocked(Actor.createActor).mockReturnValue(makeMockActor() as any));
+
+  it("returns ok on success", async () => {
+    const result = await resendWelcomePacket(MOCK_MEMBER.principal);
+    expect(result).toHaveProperty("ok");
+  });
+
+  it("returns err when member not found", async () => {
+    vi.mocked(Actor.createActor).mockReturnValue(
+      makeMockActor({ resendWelcomePacket: vi.fn().mockResolvedValue({ err: { NotFound: null } }) }) as any
+    );
+    const result = await resendWelcomePacket(MOCK_MEMBER.principal);
+    expect(result).toHaveProperty("err");
   });
 });

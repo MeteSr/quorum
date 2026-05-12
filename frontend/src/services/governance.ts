@@ -134,7 +134,15 @@ export function idlFactory({ IDL }: { IDL: any }) {
   const ResultPoll     = IDL.Variant({ ok: Poll,     err: Error });
 
   return IDL.Service({
-    setMembersCanisterId: IDL.Func([IDL.Text],                              [],               []),
+    setMembersCanisterId:    IDL.Func([IDL.Text],                              [],               []),
+    setWelcomePacketConfig:  IDL.Func([IDL.Vec(IDL.Text), IDL.Text, IDL.Text, IDL.Text], [], []),
+    getWelcomePacketConfig:  IDL.Func([], [IDL.Opt(IDL.Record({
+      pinnedDocIds:  IDL.Vec(IDL.Text),
+      contactCard:   IDL.Text,
+      amenityNotes:  IDL.Text,
+      customMessage: IDL.Text,
+      updatedAt:     IDL.Int,
+    }))], ["query"]),
     // Election methods
     createElection:    IDL.Func([IDL.Text, ElectionType, IDL.Int, IDL.Int, IDL.Int, IDL.Nat, IDL.Nat, IDL.Opt(IDL.Nat)], [ResultElection],       []),
     nominateSelf:      IDL.Func([IDL.Text, IDL.Text, IDL.Opt(IDL.Text)],                                                 [ResultNomination],     []),
@@ -453,4 +461,32 @@ export async function hasVoted(
   const actor = await createActor() as any;
   if (!actor) return false;
   return actor.hasVoted(electionId, voter);
+}
+
+// ─── Welcome Packet Config (#40) ─────────────────────────────────────────────
+
+export interface WelcomePacketConfig {
+  pinnedDocIds:  string[];
+  contactCard:   string;
+  amenityNotes:  string;
+  customMessage: string;
+  updatedAt:     bigint;
+}
+
+export async function getWelcomePacketConfig(): Promise<WelcomePacketConfig | null> {
+  const actor = await createActor() as any;
+  if (!actor) return null;
+  const result = await actor.getWelcomePacketConfig() as [] | [WelcomePacketConfig];
+  return result[0] ?? null;
+}
+
+export async function setWelcomePacketConfig(
+  pinnedDocIds:  string[],
+  contactCard:   string,
+  amenityNotes:  string,
+  customMessage: string
+): Promise<void> {
+  const actor = await createActor() as any;
+  if (!actor) return;
+  return actor.setWelcomePacketConfig(pinnedDocIds, contactCard, amenityNotes, customMessage);
 }
