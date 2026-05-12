@@ -156,14 +156,26 @@ describe("treasury IDL factory", () => {
 
   test("exposes all expected methods", () => {
     const expected = [
+      "configureStripe",
+      "createDuesCheckoutSession",
       "getAssessment",
       "getAssessmentsForUnit",
+      "getLateFeePolicy",
       "getOutstandingAssessments",
+      "getPaymentHistory",
+      "getReminderLog",
+      "getReminderPolicy",
       "getTotalOutstandingCents",
       "markPaid",
+      "metrics",
       "postAssessment",
+      "setLateFeePolicy",
       "setMembersCanisterId",
+      "setReminderPolicy",
+      "transform",
+      "verifyDuesSession",
       "waiveAssessment",
+      "waiveLateFee",
     ];
     expect([...methods.keys()].sort()).toEqual(expected);
   });
