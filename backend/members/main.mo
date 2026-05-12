@@ -576,7 +576,7 @@ persistent actor Members {
       case null  { #err(#NotFound) };
       case (?m)  {
         Map.add(members, Principal.compare, target, { m with role = #Homeowner });
-        ignore Map.remove(staffScopes, Principal.compare, target);
+        Map.remove(staffScopes, Principal.compare, target);
         #ok(())
       };
     }
@@ -585,22 +585,25 @@ persistent actor Members {
   // Board-only: list all staff assignments.
   public query(msg) func getStaffAssignments() : async Result.Result<[StaffAssignment], Error> {
     if (not isAdmin(msg.caller) and not isBoard(msg.caller)) return #err(#NotAuthorized);
-    var result : [StaffAssignment] = [];
+    var acc : [StaffAssignment] = [];
     for ((p, scope) in Map.entries(staffScopes)) {
       switch (Map.get(members, Principal.compare, p)) {
         case (?m) {
-          result := Array.append(result, [{
+          let entry : StaffAssignment = {
             principal        = p;
             role             = m.role;
             maxApprovalCents = scope.maxApprovalCents;
-            assignedBy       = p;  // stored implicitly from assignment
+            assignedBy       = p;
             assignedAt       = m.joinedAt;
-          }]);
+          };
+          acc := Array.tabulate<StaffAssignment>(acc.size() + 1, func(i) {
+            if (i < acc.size()) acc[i] else entry
+          });
         };
         case null {};
       };
     };
-    #ok(result)
+    #ok(acc)
   };
 
   // Inter-canister query: can this principal approve an action up to amountCents?
@@ -664,7 +667,7 @@ persistent actor Members {
   };
 
   public shared(msg) func removePushToken() : async () {
-    ignore Map.remove(pushTokens, Principal.compare, msg.caller);
+    Map.remove(pushTokens, Principal.compare, msg.caller);
   };
 
   // Board-only: retrieve all device tokens to fan out push notifications.
