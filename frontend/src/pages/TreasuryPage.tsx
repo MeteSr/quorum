@@ -1,10 +1,14 @@
 import { useEffect, useState } from "react";
+import jsPDF from "jspdf";
 import {
   getAssessmentsForUnit, getTotalOutstandingCents, waiveAssessment, waiveLateFee,
   createDuesCheckoutSession, verifyDuesSession,
   getLateFeePolicy, getReminderPolicy, setLateFeePolicy, setReminderPolicy,
   getPaymentHistory, getReminderLog,
+  getAgingReport, getReserveFundReport, getBudgetVsActual, getIncomeStatement, getAnnualStatement,
+  setReserveFundBalance, setBudgetLine,
   type Assessment, type LateFeePolicy, type ReminderPolicy, type DuesPayment, type ReminderLog,
+  type AgingReport, type ReserveFundReport, type BudgetVsActual, type IncomeStatement, type AnnualStatement,
 } from "@/services/treasury";
 import { getMyProfile } from "@/services/members";
 
@@ -226,6 +230,357 @@ function PolicyPanel() {
   );
 }
 
+// ─── Reports panel (#15) ─────────────────────────────────────────────────────
+
+function ReportsPanel({ unitId }: { unitId: string | null }) {
+  const [aging,    setAging   ] = useState<AgingReport | null>(null);
+  const [reserve,  setReserve ] = useState<ReserveFundReport | null>(null);
+  const [budget,   setBudget  ] = useState<BudgetVsActual[]>([]);
+  const [income,   setIncome  ] = useState<IncomeStatement | null>(null);
+  const [loading,  setLoading ] = useState(true);
+  const [year,     setYear    ] = useState(new Date().getFullYear());
+
+  // Reserve fund balance editor
+  const [reserveInput, setReserveInput] = useState("");
+  const [savingReserve, setSavingReserve] = useState(false);
+
+  useEffect(() => {
+    const yearStart = BigInt(new Date(year, 0, 1).getTime()) * BigInt(1_000_000);
+    const yearEnd   = BigInt(new Date(year + 1, 0, 1).getTime()) * BigInt(1_000_000);
+    Promise.all([
+      getAgingReport(),
+      getReserveFundReport(),
+      getBudgetVsActual(year),
+      getIncomeStatement(yearStart, yearEnd),
+    ]).then(([a, r, b, i]) => {
+      setAging(a);
+      setReserve(r);
+      setBudget(b);
+      setIncome(i);
+    }).catch(() => {}).finally(() => setLoading(false));
+  }, [year]);
+
+  async function handleSaveReserve() {
+    const val = parseInt(reserveInput, 10);
+    if (isNaN(val) || val < 0) return;
+    setSavingReserve(true);
+    await setReserveFundBalance(BigInt(val));
+    const updated = await getReserveFundReport();
+    setReserve(updated);
+    setSavingReserve(false);
+  }
+
+  const labelStyle: React.CSSProperties = {
+    fontFamily: S.mono, fontSize: "0.58rem", letterSpacing: "0.08em",
+    color: S.inkLight, textTransform: "uppercase", display: "block", marginBottom: "0.3rem",
+  };
+  const sectionTitle: React.CSSProperties = {
+    fontFamily: S.mono, fontSize: "0.62rem", letterSpacing: "0.1em",
+    color: S.inkLight, textTransform: "uppercase", marginBottom: "1rem",
+  };
+
+  if (loading) return <p style={{ fontFamily: S.sans, color: S.inkLight }}>Loading reports…</p>;
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: "2rem" }}>
+
+      {/* Year selector */}
+      <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
+        <span style={sectionTitle}>Fiscal Year</span>
+        <select
+          value={year}
+          onChange={(e) => { setLoading(true); setYear(Number(e.target.value)); }}
+          style={{ fontFamily: S.mono, fontSize: "0.75rem", border: `1px solid ${S.rule}`, padding: "0.25rem 0.5rem" }}
+        >
+          {[2023, 2024, 2025, 2026].map((y) => <option key={y} value={y}>{y}</option>)}
+        </select>
+      </div>
+
+      {/* Income statement */}
+      {income && (
+        <div style={{ border: `1px solid ${S.rule}`, padding: "1.5rem", background: "#fff" }}>
+          <div style={sectionTitle}>Income Statement — {year}</div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem" }}>
+            <div>
+              <div style={labelStyle}>Total Income</div>
+              <div style={{ fontFamily: S.serif, fontWeight: 700, fontSize: "1.5rem", color: S.sage }}>
+                {centsToDisplay(income.totalIncomeCents)}
+              </div>
+            </div>
+            <div>
+              <div style={labelStyle}>Net Operating Income</div>
+              <div style={{ fontFamily: S.serif, fontWeight: 700, fontSize: "1.5rem" }}>
+                {centsToDisplay(income.netOperatingIncomeCents < 0n ? -income.netOperatingIncomeCents : income.netOperatingIncomeCents)}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Aging report */}
+      {aging && (
+        <div style={{ border: `1px solid ${S.rule}`, padding: "1.5rem", background: "#fff" }}>
+          <div style={sectionTitle}>Accounts Receivable Aging</div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "1rem" }}>
+            {[
+              { label: "0–30 days",  entries: aging.current   },
+              { label: "31–60 days", entries: aging.days31_60 },
+              { label: "61–90 days", entries: aging.days61_90 },
+              { label: "90+ days",   entries: aging.days90plus },
+            ].map(({ label, entries }) => {
+              const total = entries.reduce((s, e) => s + e.amountCents, BigInt(0));
+              const color = label.startsWith("90") ? S.rust : label.startsWith("61") ? S.amber : S.ink;
+              return (
+                <div key={label} style={{ borderLeft: `3px solid ${color}`, paddingLeft: "0.75rem" }}>
+                  <div style={labelStyle}>{label}</div>
+                  <div style={{ fontFamily: S.serif, fontWeight: 700, fontSize: "1.25rem", color }}>
+                    {centsToDisplay(total)}
+                  </div>
+                  <div style={{ fontFamily: S.mono, fontSize: "0.55rem", color: S.inkLight, marginTop: "0.2rem" }}>
+                    {entries.length} unit{entries.length !== 1 ? "s" : ""}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          <div style={{ marginTop: "1.25rem", borderTop: `1px solid ${S.rule}`, paddingTop: "0.75rem", display: "flex", justifyContent: "space-between" }}>
+            <span style={{ fontFamily: S.mono, fontSize: "0.6rem", color: S.inkLight, textTransform: "uppercase" }}>Total Outstanding</span>
+            <span style={{ fontFamily: S.serif, fontWeight: 700 }}>{centsToDisplay(aging.totalOutstandingCents)}</span>
+          </div>
+        </div>
+      )}
+
+      {/* Budget vs actual */}
+      {budget.length > 0 && (
+        <div style={{ border: `1px solid ${S.rule}`, padding: "1.5rem", background: "#fff" }}>
+          <div style={sectionTitle}>Budget vs. Actual — {year}</div>
+          <table style={{ width: "100%", borderCollapse: "collapse", fontFamily: S.sans, fontSize: "0.82rem" }}>
+            <thead>
+              <tr style={{ borderBottom: `1px solid ${S.rule}` }}>
+                {["Category", "Budgeted", "Actual", "Variance"].map((h) => (
+                  <th key={h} style={{ fontFamily: S.mono, fontSize: "0.58rem", letterSpacing: "0.08em", color: S.inkLight, textTransform: "uppercase", padding: "0.4rem 0.5rem", textAlign: "left" }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {budget.map((row) => (
+                <tr key={row.category} style={{ borderBottom: `1px solid ${S.rule}` }}>
+                  <td style={{ padding: "0.5rem" }}>{row.category}</td>
+                  <td style={{ padding: "0.5rem" }}>{centsToDisplay(row.budgetedCents)}</td>
+                  <td style={{ padding: "0.5rem" }}>{centsToDisplay(row.actualCents)}</td>
+                  <td style={{ padding: "0.5rem", color: row.varianceCents < 0n ? S.rust : S.sage }}>
+                    {row.varianceCents < 0n ? "-" : "+"}{centsToDisplay(row.varianceCents < 0n ? -row.varianceCents : row.varianceCents)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* Reserve fund */}
+      {reserve && (
+        <div style={{ border: `1px solid ${S.rule}`, padding: "1.5rem", background: "#fff" }}>
+          <div style={sectionTitle}>Reserve Fund Status</div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "1rem", marginBottom: "1.25rem" }}>
+            <div>
+              <div style={labelStyle}>Current Balance</div>
+              <div style={{ fontFamily: S.serif, fontWeight: 700, fontSize: "1.25rem" }}>{centsToDisplay(reserve.currentBalanceCents)}</div>
+            </div>
+            <div>
+              <div style={labelStyle}>Recommended (30% of annual)</div>
+              <div style={{ fontFamily: S.serif, fontWeight: 700, fontSize: "1.25rem" }}>{centsToDisplay(reserve.recommendedBalanceCents)}</div>
+            </div>
+            <div>
+              <div style={labelStyle}>Funding Gap</div>
+              <div style={{ fontFamily: S.serif, fontWeight: 700, fontSize: "1.25rem", color: reserve.fundingGapCents < 0n ? S.rust : S.sage }}>
+                {reserve.fundingGapCents < 0n
+                  ? `-${centsToDisplay(-reserve.fundingGapCents)}`
+                  : `+${centsToDisplay(reserve.fundingGapCents)}`}
+              </div>
+            </div>
+          </div>
+          <div style={{ display: "flex", gap: "0.75rem", alignItems: "flex-end" }}>
+            <div>
+              <label style={labelStyle}>Update reserve balance (cents)</label>
+              <input
+                value={reserveInput}
+                onChange={(e) => setReserveInput(e.target.value)}
+                placeholder={reserve.currentBalanceCents.toString()}
+                style={{ fontFamily: S.mono, fontSize: "0.75rem", border: `1px solid ${S.rule}`, padding: "0.3rem 0.5rem", width: "160px" }}
+                type="number" min="0"
+              />
+            </div>
+            <button
+              onClick={handleSaveReserve}
+              disabled={savingReserve}
+              style={{
+                background: S.navy, color: "#fff", border: "none", fontFamily: S.mono,
+                fontSize: "0.6rem", letterSpacing: "0.08em", textTransform: "uppercase",
+                padding: "0.4rem 1rem", cursor: savingReserve ? "default" : "pointer", opacity: savingReserve ? 0.6 : 1,
+              }}
+            >
+              {savingReserve ? "Saving…" : "Update"}
+            </button>
+          </div>
+        </div>
+      )}
+
+    </div>
+  );
+}
+
+// ─── Annual statement download (#41) ─────────────────────────────────────────
+
+function AnnualStatementDownload({ unitId }: { unitId: string }) {
+  const [year,      setYear     ] = useState(new Date().getFullYear());
+  const [loading,   setLoading  ] = useState(false);
+  const [error,     setError    ] = useState<string | null>(null);
+
+  async function handleDownload() {
+    setLoading(true);
+    setError(null);
+    try {
+      const stmt = await getAnnualStatement(unitId, year);
+      if (!stmt) { setError("Could not load statement data."); return; }
+      generatePDF(stmt, year);
+    } catch {
+      setError("Failed to generate statement.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function generatePDF(stmt: AnnualStatement, yr: number) {
+    const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "letter" });
+    const margin = 20;
+    let y = 20;
+
+    // Header
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(18);
+    doc.text("HOA Annual Dues Statement", margin, y);
+    y += 8;
+
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(10);
+    doc.setTextColor(100);
+    doc.text(`Fiscal Year: ${yr}`, margin, y);
+    y += 5;
+    doc.text(`Unit: ${stmt.unitId}`, margin, y);
+    y += 5;
+    doc.text(`Generated: ${new Date(Number(stmt.generatedAt) / 1_000_000).toLocaleDateString()}`, margin, y);
+    y += 10;
+
+    doc.setDrawColor(200);
+    doc.line(margin, y, 210 - margin, y);
+    y += 8;
+
+    // Summary
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(11);
+    doc.setTextColor(0);
+    doc.text("Summary", margin, y);
+    y += 6;
+
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(10);
+    const rows: [string, string][] = [
+      ["Total Billed",      `$${(Number(stmt.totalBilledCents) / 100).toFixed(2)}`],
+      ["Total Paid",        `$${(Number(stmt.totalPaidCents) / 100).toFixed(2)}`],
+      ["Outstanding Balance", `$${(Number(stmt.outstandingCents) / 100).toFixed(2)}`],
+    ];
+    for (const [label, value] of rows) {
+      doc.text(label, margin, y);
+      doc.text(value, 140, y);
+      y += 6;
+    }
+    y += 6;
+
+    doc.line(margin, y, 210 - margin, y);
+    y += 8;
+
+    // Payment table
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(11);
+    doc.text("Payment History", margin, y);
+    y += 6;
+
+    doc.setFontSize(9);
+    doc.setTextColor(100);
+    doc.text("Date", margin, y);
+    doc.text("Reference", margin + 35, y);
+    doc.text("Amount", 140, y);
+    y += 4;
+    doc.setDrawColor(220);
+    doc.line(margin, y, 210 - margin, y);
+    y += 5;
+
+    doc.setTextColor(0);
+    if (stmt.payments.length === 0) {
+      doc.setFont("helvetica", "italic");
+      doc.text("No payments recorded for this period.", margin, y);
+      y += 6;
+    } else {
+      doc.setFont("helvetica", "normal");
+      for (const p of stmt.payments) {
+        const dateStr = new Date(Number(p.paidAt) / 1_000_000).toLocaleDateString();
+        const ref     = p.stripePaymentId.slice(0, 22);
+        const amount  = `$${(Number(p.amountCents) / 100).toFixed(2)}`;
+        doc.text(dateStr, margin, y);
+        doc.text(ref,     margin + 35, y);
+        doc.text(amount,  140, y);
+        y += 6;
+        if (y > 260) { doc.addPage(); y = 20; }
+      }
+    }
+
+    y += 8;
+    doc.setFontSize(8);
+    doc.setTextColor(140);
+    doc.text("This document is for informational purposes only.", margin, y);
+    y += 4;
+    doc.text("Contact your HOA board to dispute any line item.", margin, y);
+
+    doc.save(`hoa-statement-${stmt.unitId}-${yr}.pdf`);
+  }
+
+  return (
+    <div style={{ border: `1px solid ${S.rule}`, padding: "1.5rem", background: "#fff", marginTop: "2rem" }}>
+      <div style={{ fontFamily: S.mono, fontSize: "0.62rem", letterSpacing: "0.1em", color: S.inkLight, textTransform: "uppercase", marginBottom: "1rem" }}>
+        Annual Dues Statement — PDF Download
+      </div>
+      <div style={{ display: "flex", alignItems: "center", gap: "1rem" }}>
+        <div>
+          <label style={{ fontFamily: S.mono, fontSize: "0.58rem", letterSpacing: "0.08em", color: S.inkLight, textTransform: "uppercase", display: "block", marginBottom: "0.3rem" }}>Year</label>
+          <select
+            value={year}
+            onChange={(e) => setYear(Number(e.target.value))}
+            style={{ fontFamily: S.mono, fontSize: "0.75rem", border: `1px solid ${S.rule}`, padding: "0.3rem 0.5rem" }}
+          >
+            {[new Date().getFullYear(), new Date().getFullYear() - 1, new Date().getFullYear() - 2, new Date().getFullYear() - 3].map((y) => (
+              <option key={y} value={y}>{y}</option>
+            ))}
+          </select>
+        </div>
+        <button
+          onClick={handleDownload}
+          disabled={loading}
+          style={{
+            background: S.navy, color: "#fff", border: "none", fontFamily: S.mono,
+            fontSize: "0.6rem", letterSpacing: "0.1em", textTransform: "uppercase",
+            padding: "0.45rem 1.25rem", cursor: loading ? "default" : "pointer",
+            opacity: loading ? 0.6 : 1, marginTop: "1.2rem",
+          }}
+        >
+          {loading ? "Generating…" : "Download PDF"}
+        </button>
+      </div>
+      {error && <div style={{ color: S.rust, fontFamily: S.mono, fontSize: "0.6rem", marginTop: "0.5rem" }}>{error}</div>}
+    </div>
+  );
+}
+
 // ─── Main page ────────────────────────────────────────────────────────────────
 
 export default function TreasuryPage() {
@@ -235,7 +590,7 @@ export default function TreasuryPage() {
   const [totalOutstanding, setTotalOutstanding] = useState<bigint | null>(null);
   const [loading,          setLoading]          = useState(true);
   const [unitId,           setUnitId]           = useState<string | null>(null);
-  const [activeTab,        setActiveTab]        = useState<"assessments" | "history" | "reminders">("assessments");
+  const [activeTab,        setActiveTab]        = useState<"assessments" | "history" | "reminders" | "reports">("assessments");
 
   function reload(uid: string) {
     Promise.all([
@@ -305,6 +660,7 @@ export default function TreasuryPage() {
         <button style={tabStyle(activeTab === "assessments")} onClick={() => setActiveTab("assessments")}>Assessments</button>
         <button style={tabStyle(activeTab === "history")}     onClick={() => setActiveTab("history")}>Payment History</button>
         <button style={tabStyle(activeTab === "reminders")}   onClick={() => setActiveTab("reminders")}>Reminder Log</button>
+        <button style={tabStyle(activeTab === "reports")}     onClick={() => setActiveTab("reports")}>Reports</button>
       </div>
 
       {/* Assessments tab */}
@@ -396,6 +752,14 @@ export default function TreasuryPage() {
             ))}
           </div>
         )
+      )}
+
+      {/* Reports tab */}
+      {activeTab === "reports" && (
+        <>
+          <ReportsPanel unitId={unitId} />
+          {unitId && <AnnualStatementDownload unitId={unitId} />}
+        </>
       )}
 
       {/* Board policy panel */}

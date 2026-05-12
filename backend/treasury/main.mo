@@ -98,6 +98,53 @@ persistent actor Treasury {
     #PaymentFailed: Text;
   };
 
+  public type AgingBucket = { unitId : Text; amountCents : Nat };
+
+  public type AgingReport = {
+    current:               [AgingBucket];
+    days31_60:             [AgingBucket];
+    days61_90:             [AgingBucket];
+    days90plus:            [AgingBucket];
+    totalOutstandingCents: Nat;
+  };
+
+  public type BudgetLine = {
+    year:          Nat;
+    category:      Text;
+    budgetedCents: Nat;
+  };
+
+  public type BudgetVsActual = {
+    category:      Text;
+    budgetedCents: Nat;
+    actualCents:   Nat;
+    varianceCents: Int;
+  };
+
+  public type ReserveFundReport = {
+    currentBalanceCents:     Nat;
+    annualIncomeCents:       Nat;
+    recommendedBalanceCents: Nat;
+    fundingGapCents:         Int;
+  };
+
+  public type IncomeStatement = {
+    startDate:               Time.Time;
+    endDate:                 Time.Time;
+    totalIncomeCents:        Nat;
+    netOperatingIncomeCents: Int;
+  };
+
+  public type AnnualStatement = {
+    unitId:           Text;
+    year:             Nat;
+    payments:         [DuesPayment];
+    totalBilledCents: Nat;
+    totalPaidCents:   Nat;
+    outstandingCents: Nat;
+    generatedAt:      Time.Time;
+  };
+
   // ─── IC HTTP Outcall interface ────────────────────────────────────────────────
 
   public type HttpHeader   = { name : Text; value : Text };
@@ -141,6 +188,9 @@ persistent actor Treasury {
   private var stripeConfig   : ?StripeConfig   = null;
   private var lateFeePolicy  : ?LateFeePolicy  = null;
   private var reminderPolicy : ?ReminderPolicy = null;
+
+  private let budgetLines        = Map.empty<Text, BudgetLine>();  // key: year#category
+  private var reserveFundBalance : Nat = 0;
 
   // Resets on upgrade — safe, idempotency keys prevent double-work
   transient var lastScanDayNs : Int = 0;
@@ -215,6 +265,34 @@ persistent actor Treasury {
 
   public shared func setReminderPolicy(policy: ReminderPolicy) : async () {
     reminderPolicy := ?policy;
+  };
+
+  public shared func setReserveFundBalance(balance : Nat) : async () {
+    reserveFundBalance := balance;
+  };
+
+  public shared func setBudgetLine(year : Nat, category : Text, budgetedCents : Nat) : async () {
+    let key = Nat.toText(year) # "#" # category;
+    Map.add(budgetLines, Text.compare, key, { year; category; budgetedCents });
+  };
+
+  // ─── Year helper ──────────────────────────────────────────────────────────────
+
+  private func yearStartNs(year : Nat) : Int {
+    switch (year) {
+      case 2020 { 1_577_836_800_000_000_000 };
+      case 2021 { 1_609_459_200_000_000_000 };
+      case 2022 { 1_640_995_200_000_000_000 };
+      case 2023 { 1_672_531_200_000_000_000 };
+      case 2024 { 1_704_067_200_000_000_000 };
+      case 2025 { 1_735_689_600_000_000_000 };
+      case 2026 { 1_767_225_600_000_000_000 };
+      case 2027 { 1_798_761_600_000_000_000 };
+      case 2028 { 1_830_384_000_000_000_000 };
+      case 2029 { 1_861_920_000_000_000_000 };
+      case 2030 { 1_893_456_000_000_000_000 };
+      case _    { (year - 1970) * 365 * 86_400_000_000_000 };
+    }
   };
 
   // ─── Board Actions ────────────────────────────────────────────────────────────
@@ -414,6 +492,120 @@ persistent actor Treasury {
     } catch (_e) {
       #err(#PaymentFailed("Stripe verification request failed"))
     }
+  };
+
+  // ─── Reporting queries (#15 + #41) ───────────────────────────────────────────
+
+  public query func getAgingReport() : async AgingReport {
+    let now    = Time.now();
+    let day30  : Int = 30 * DAY_NS;
+    let day60  : Int = 60 * DAY_NS;
+    let day90  : Int = 90 * DAY_NS;
+    var current  : [AgingBucket] = [];
+    var d31_60   : [AgingBucket] = [];
+    var d61_90   : [AgingBucket] = [];
+    var d90plus  : [AgingBucket] = [];
+    var total    : Nat = 0;
+    for (a in Map.values(assessments)) {
+      if (a.status == #Outstanding) {
+        let overdue : Int = now - a.dueDate;
+        let b : AgingBucket = { unitId = a.unitId; amountCents = a.amountCents };
+        total += a.amountCents;
+        if      (overdue < day30) { current := Array.append(current, [b]) }
+        else if (overdue < day60) { d31_60  := Array.append(d31_60,  [b]) }
+        else if (overdue < day90) { d61_90  := Array.append(d61_90,  [b]) }
+        else                      { d90plus := Array.append(d90plus,  [b]) };
+      };
+    };
+    { current; days31_60 = d31_60; days61_90 = d61_90; days90plus = d90plus; totalOutstandingCents = total }
+  };
+
+  public query func getReserveFundReport() : async ReserveFundReport {
+    let now     = Time.now();
+    let yearAgo : Int = now - 365 * DAY_NS;
+    var annualIncome : Nat = 0;
+    for (p in Map.values(duesPayments)) {
+      if (p.paidAt >= yearAgo) { annualIncome += p.amountCents };
+    };
+    let recommended : Nat = annualIncome * 30 / 100;
+    {
+      currentBalanceCents     = reserveFundBalance;
+      annualIncomeCents       = annualIncome;
+      recommendedBalanceCents = recommended;
+      fundingGapCents         = (reserveFundBalance : Int) - (recommended : Int);
+    }
+  };
+
+  public query func getBudgetVsActual(year : Nat) : async [BudgetVsActual] {
+    let startNs = yearStartNs(year);
+    let endNs   = yearStartNs(year + 1);
+    var monthlyActual  : Nat = 0;
+    var specialActual  : Nat = 0;
+    var fineActual     : Nat = 0;
+    var amenityActual  : Nat = 0;
+    var lateFeeActual  : Nat = 0;
+    for (p in Map.values(duesPayments)) {
+      if (p.paidAt >= startNs and p.paidAt < endNs) {
+        switch (Map.get(assessments, Text.compare, p.assessmentId)) {
+          case null {};
+          case (?a) {
+            switch (a.kind) {
+              case (#MonthlyDues)       { monthlyActual  += p.amountCents };
+              case (#SpecialAssessment) { specialActual  += p.amountCents };
+              case (#Fine)              { fineActual     += p.amountCents };
+              case (#Amenity)           { amenityActual  += p.amountCents };
+              case (#LateFee)           { lateFeeActual  += p.amountCents };
+            };
+          };
+        };
+      };
+    };
+    let budgeted = func(cat : Text) : Nat {
+      switch (Map.get(budgetLines, Text.compare, Nat.toText(year) # "#" # cat)) {
+        case null  { 0 };
+        case (?bl) { bl.budgetedCents };
+      }
+    };
+    let cats : [(Text, Nat)] = [
+      ("MonthlyDues",       monthlyActual),
+      ("SpecialAssessment", specialActual),
+      ("Fine",              fineActual),
+      ("Amenity",           amenityActual),
+      ("LateFee",           lateFeeActual),
+    ];
+    Array.tabulate<BudgetVsActual>(cats.size(), func(i) {
+      let (cat, actual) = cats[i];
+      let b = budgeted(cat);
+      { category = cat; budgetedCents = b; actualCents = actual; varianceCents = (actual : Int) - (b : Int) }
+    })
+  };
+
+  public query func getIncomeStatement(startDate : Int, endDate : Int) : async IncomeStatement {
+    var totalIncome : Nat = 0;
+    for (p in Map.values(duesPayments)) {
+      if (p.paidAt >= startDate and p.paidAt < endDate) { totalIncome += p.amountCents };
+    };
+    { startDate; endDate; totalIncomeCents = totalIncome; netOperatingIncomeCents = totalIncome }
+  };
+
+  public query func getAnnualStatement(unitId : Text, year : Nat) : async AnnualStatement {
+    let startNs = yearStartNs(year);
+    let endNs   = yearStartNs(year + 1);
+    let unitPays = Array.filter<DuesPayment>(
+      Iter.toArray(Map.values(duesPayments)),
+      func(p) { p.unitId == unitId and p.paidAt >= startNs and p.paidAt < endNs }
+    );
+    let unitAsmt = Array.filter<Assessment>(
+      Iter.toArray(Map.values(assessments)),
+      func(a) { a.unitId == unitId and a.createdAt >= startNs and a.createdAt < endNs }
+    );
+    let totalPaid    = Array.foldLeft<DuesPayment,  Nat>(unitPays, 0, func(acc, p) { acc + p.amountCents });
+    let totalBilled  = Array.foldLeft<Assessment,   Nat>(unitAsmt, 0, func(acc, a) { acc + a.amountCents });
+    let outstandingC = Array.foldLeft<Assessment,   Nat>(
+      Array.filter<Assessment>(unitAsmt, func(a) { a.status == #Outstanding }),
+      0, func(acc, a) { acc + a.amountCents }
+    );
+    { unitId; year; payments = unitPays; totalBilledCents = totalBilled; totalPaidCents = totalPaid; outstandingCents = outstandingC; generatedAt = Time.now() }
   };
 
   // ─── Queries ─────────────────────────────────────────────────────────────────
