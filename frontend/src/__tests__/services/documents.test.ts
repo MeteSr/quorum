@@ -19,6 +19,11 @@ import {
   getAcknowledgmentStatus,
   setRequiresAcknowledgment,
   getMyAcknowledgedDocs,
+  setDocumentCompliance,
+  clearDocumentCompliance,
+  logDocumentAccess,
+  getAccessLog,
+  getComplianceStatus,
 } from "@/services/documents";
 import type { DocCategory } from "@/services/documents";
 
@@ -33,6 +38,24 @@ const MOCK_DOC_META: any = {
   uploadedAt:              BigInt(1_700_000_000_000_000_000),
   description:             "Community CC&Rs updated 2024",
   requiresAcknowledgment:  false,
+  statute:                 [] as [],
+};
+
+const MOCK_ACCESS_LOG_ENTRY = {
+  docId:      "doc-1",
+  accessor:   { toText: () => "member-principal" } as any,
+  accessedAt: BigInt(1_700_000_000_000_000_000),
+};
+
+const MOCK_COMPLIANCE: any = {
+  covered: [{ FLhb1203_Declaration: null }],
+  missing: [
+    { FLhb1203_Bylaws:    null },
+    { FLhb1203_Rules:     null },
+    { FLhb1203_Budget:    null },
+    { FLhb1203_Minutes:   null },
+    { FLhb1203_Financial: null },
+  ],
 };
 
 function makeMockActor(overrides: Record<string, any> = {}) {
@@ -46,6 +69,11 @@ function makeMockActor(overrides: Record<string, any> = {}) {
     acknowledgeDocument:        vi.fn().mockResolvedValue({ ok: null }),
     getAcknowledgmentStatus:    vi.fn().mockResolvedValue([["aaaaa-bbbbb-cai", BigInt(1_700_000_000_000_000_000)]]),
     getMyAcknowledgedDocs:      vi.fn().mockResolvedValue(["doc-1"]),
+    setDocumentCompliance:      vi.fn().mockResolvedValue({ ok: { ...MOCK_DOC_META, statute: [{ FLhb1203_Declaration: null }] } }),
+    clearDocumentCompliance:    vi.fn().mockResolvedValue({ ok: MOCK_DOC_META }),
+    logDocumentAccess:          vi.fn().mockResolvedValue({ ok: null }),
+    getAccessLog:               vi.fn().mockResolvedValue([MOCK_ACCESS_LOG_ENTRY]),
+    getComplianceStatus:        vi.fn().mockResolvedValue(MOCK_COMPLIANCE),
     ...overrides,
   };
 }
@@ -208,4 +236,84 @@ describe("documents service — getMyAcknowledgedDocs", () => {
     const docIds = await getMyAcknowledgedDocs();
     expect(docIds).toEqual([]);
   });
+});
+
+// ─── FL HB 1203 compliance tests ─────────────────────────────────────────────
+
+describe("documents service — setDocumentCompliance", () => {
+  beforeEach(() => vi.mocked(Actor.createActor).mockReturnValue(makeMockActor() as any));
+
+  it("returns ok with updated meta containing the statute", async () => {
+    const result = await setDocumentCompliance("doc-1", { FLhb1203_Declaration: null });
+    expect(result).toHaveProperty("ok");
+    expect((result as any).ok.statute).toEqual([{ FLhb1203_Declaration: null }]);
+  });
+
+  it("returns err when document not found", async () => {
+    vi.mocked(Actor.createActor).mockReturnValue(
+      makeMockActor({ setDocumentCompliance: vi.fn().mockResolvedValue({ err: { NotFound: null } }) }) as any
+    );
+    const result = await setDocumentCompliance("bad-id", { FLhb1203_Bylaws: null });
+    expect(result).toHaveProperty("err");
+  });
+
+  it("returns err when caller is not the uploader", async () => {
+    vi.mocked(Actor.createActor).mockReturnValue(
+      makeMockActor({ setDocumentCompliance: vi.fn().mockResolvedValue({ err: { NotAuthorized: null } }) }) as any
+    );
+    const result = await setDocumentCompliance("doc-1", { FLhb1203_Rules: null });
+    expect((result as any).err).toHaveProperty("NotAuthorized");
+  });
+});
+
+describe("documents service — clearDocumentCompliance", () => {
+  beforeEach(() => vi.mocked(Actor.createActor).mockReturnValue(makeMockActor() as any));
+
+  it("returns ok with meta with statute cleared", async () => {
+    const result = await clearDocumentCompliance("doc-1");
+    expect(result).toHaveProperty("ok");
+    expect((result as any).ok.statute).toEqual([]);
+  });
+});
+
+describe("documents service — logDocumentAccess", () => {
+  beforeEach(() => vi.mocked(Actor.createActor).mockReturnValue(makeMockActor() as any));
+
+  it("calls actor.logDocumentAccess with the docId", async () => {
+    const spy = vi.fn().mockResolvedValue({ ok: null });
+    vi.mocked(Actor.createActor).mockReturnValue(makeMockActor({ logDocumentAccess: spy }) as any);
+    await logDocumentAccess("doc-1");
+    expect(spy).toHaveBeenCalledWith("doc-1");
+  });
+
+});
+
+describe("documents service — getAccessLog", () => {
+  beforeEach(() => vi.mocked(Actor.createActor).mockReturnValue(makeMockActor() as any));
+
+  it("returns access log entries for a document", async () => {
+    const log = await getAccessLog("doc-1");
+    expect(log).toHaveLength(1);
+    expect(log[0].docId).toBe("doc-1");
+    expect(typeof log[0].accessedAt).toBe("bigint");
+  });
+
+  it("returns empty array when no accesses recorded", async () => {
+    vi.mocked(Actor.createActor).mockReturnValue(
+      makeMockActor({ getAccessLog: vi.fn().mockResolvedValue([]) }) as any
+    );
+    expect(await getAccessLog("doc-1")).toEqual([]);
+  });
+});
+
+describe("documents service — getComplianceStatus", () => {
+  beforeEach(() => vi.mocked(Actor.createActor).mockReturnValue(makeMockActor() as any));
+
+  it("returns covered and missing statute arrays", async () => {
+    const status = await getComplianceStatus();
+    expect(status.covered).toHaveLength(1);
+    expect(status.missing).toHaveLength(5);
+    expect(status.covered[0]).toEqual({ FLhb1203_Declaration: null });
+  });
+
 });

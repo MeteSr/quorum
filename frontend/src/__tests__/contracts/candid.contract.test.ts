@@ -300,14 +300,19 @@ describe("documents IDL factory", () => {
   test("exposes all expected methods", () => {
     const expected = [
       "acknowledgeDocument",
+      "clearDocumentCompliance",
       "deleteDocument",
+      "getAccessLog",
       "getAcknowledgmentStatus",
       "getAllDocumentsMeta",
       "getAllPublicDocumentsMeta",
+      "getComplianceStatus",
       "getDocument",
       "getDocumentMeta",
       "getDocumentsByCategory",
       "getMyAcknowledgedDocs",
+      "logDocumentAccess",
+      "setDocumentCompliance",
       "setRequiresAcknowledgment",
       "uploadDocument",
     ];
@@ -350,6 +355,36 @@ describe("documents IDL factory", () => {
 
   test("getMyAcknowledgedDocs is a query", () => {
     expect(methods.get("getMyAcknowledgedDocs")!.isQuery).toBe(true);
+  });
+
+  test("setDocumentCompliance is an update call with 2 args", () => {
+    const m = methods.get("setDocumentCompliance")!;
+    expect(m.isQuery).toBe(false);
+    expect(m.argTypes).toHaveLength(2);
+  });
+
+  test("clearDocumentCompliance is an update call with 1 arg", () => {
+    const m = methods.get("clearDocumentCompliance")!;
+    expect(m.isQuery).toBe(false);
+    expect(m.argTypes).toHaveLength(1);
+  });
+
+  test("logDocumentAccess is an update call with 1 arg", () => {
+    const m = methods.get("logDocumentAccess")!;
+    expect(m.isQuery).toBe(false);
+    expect(m.argTypes).toHaveLength(1);
+  });
+
+  test("getAccessLog is a query with 1 arg", () => {
+    const m = methods.get("getAccessLog")!;
+    expect(m.isQuery).toBe(true);
+    expect(m.argTypes).toHaveLength(1);
+  });
+
+  test("getComplianceStatus is a query with 0 args", () => {
+    const m = methods.get("getComplianceStatus")!;
+    expect(m.isQuery).toBe(true);
+    expect(m.argTypes).toHaveLength(0);
   });
 });
 
