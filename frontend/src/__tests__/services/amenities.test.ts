@@ -48,15 +48,18 @@ const MOCK_AMENITY: any = {
 };
 
 const MOCK_RESERVATION: any = {
-  id:         "RSV_1",
-  amenityId:  "AMN_1",
-  date:       "2025-07-04",
-  startSlot:  BigInt(2),
-  guestCount: BigInt(3),
-  bookedBy:   CALLER,
-  unitId:     "7C",
-  status:     { Active: null },
-  createdAt:  NOW,
+  id:                    "RSV_1",
+  amenityId:             "AMN_1",
+  date:                  "2025-07-04",
+  startSlot:             BigInt(2),
+  guestCount:            BigInt(3),
+  bookedBy:              CALLER,
+  unitId:                "7C",
+  status:                { Active: null },
+  createdAt:             NOW,
+  bookingStartNs:        NOW,
+  stripePaymentIntentId: [],
+  clientSecret:          [],
 };
 
 const MOCK_WAITLIST: any = {
@@ -166,8 +169,10 @@ describe("amenities service — updateAmenity", () => {
 describe("amenities service — createReservation", () => {
   beforeEach(() => vi.mocked(Actor.createActor).mockReturnValue(makeMockActor() as any));
 
+  const BOOKING_NS = BigInt(1_720_044_000_000_000_000);
+
   it("returns ok with the reservation", async () => {
-    const result = await createReservation("AMN_1", "2025-07-04", 2, 3, "7C");
+    const result = await createReservation("AMN_1", "2025-07-04", 2, 3, "7C", BOOKING_NS);
     expect(result).toHaveProperty("ok");
     if (!("ok" in result)) return;
     expect(result.ok.amenityId).toBe("AMN_1");
@@ -178,16 +183,16 @@ describe("amenities service — createReservation", () => {
   it("passes args as bigints to the actor", async () => {
     const actor = makeMockActor();
     vi.mocked(Actor.createActor).mockReturnValue(actor as any);
-    await createReservation("AMN_1", "2025-07-04", 2, 3, "7C");
+    await createReservation("AMN_1", "2025-07-04", 2, 3, "7C", BOOKING_NS);
     expect(actor.createReservation).toHaveBeenCalledWith(
-      "AMN_1", "2025-07-04", BigInt(2), BigInt(3), "7C"
+      "AMN_1", "2025-07-04", BigInt(2), BigInt(3), "7C", BOOKING_NS
     );
   });
 
   it("returns err on capacity exceeded", async () => {
     const actor = makeMockActor({ createReservation: vi.fn().mockResolvedValue({ err: { CapacityExceeded: null } }) });
     vi.mocked(Actor.createActor).mockReturnValue(actor as any);
-    const result = await createReservation("AMN_1", "2025-07-04", 2, 25, "7C");
+    const result = await createReservation("AMN_1", "2025-07-04", 2, 25, "7C", BOOKING_NS);
     expect(result).toHaveProperty("err");
     if (!("err" in result)) return;
     expect(result.err).toHaveProperty("CapacityExceeded");

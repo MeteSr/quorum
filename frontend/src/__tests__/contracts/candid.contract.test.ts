@@ -865,6 +865,8 @@ describe("amenities IDL factory", () => {
   test("exposes all expected methods", () => {
     const expected = [
       "setAdmin",
+      "setStripeKey",
+      "setAnnouncementsCanisterId",
       "createAmenity",
       "updateAmenity",
       "createReservation",
@@ -895,10 +897,10 @@ describe("amenities IDL factory", () => {
     expect(m.argTypes).toHaveLength(7);
   });
 
-  test("createReservation is an update call with 5 args", () => {
+  test("createReservation is an update call with 6 args", () => {
     const m = methods.get("createReservation")!;
     expect(m.isQuery).toBe(false);
-    expect(m.argTypes).toHaveLength(5);
+    expect(m.argTypes).toHaveLength(6);
   });
 
   test("getAmenities is a query with 0 args", () => {
