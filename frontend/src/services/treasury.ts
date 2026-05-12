@@ -90,6 +90,35 @@ export function idlFactory({ IDL }: { IDL: any }) {
     platformFeeCents: IDL.Nat,
     lateFeeCount:     IDL.Nat,
     remindersSent:    IDL.Nat,
+    delinquentCount:  IDL.Nat,
+  });
+
+  const CollectionStage = IDL.Variant({
+    GracePeriod:  IDL.Null,
+    FirstNotice:  IDL.Null,
+    SecondNotice: IDL.Null,
+    PreLien:      IDL.Null,
+    Lien:         IDL.Null,
+    Resolved:     IDL.Null,
+  });
+
+  const CollectionEvent = IDL.Record({
+    id:        IDL.Text,
+    unitId:    IDL.Text,
+    fromStage: CollectionStage,
+    toStage:   CollectionStage,
+    note:      IDL.Text,
+    createdAt: IDL.Int,
+    createdBy: IDL.Principal,
+  });
+
+  const DelinquencyRecord = IDL.Record({
+    unitId:            IDL.Text,
+    stage:             CollectionStage,
+    totalOverdueCents: IDL.Nat,
+    oldestDueDateNs:   IDL.Int,
+    openedAt:          IDL.Int,
+    lastUpdatedAt:     IDL.Int,
   });
 
   const Error = IDL.Variant({
@@ -99,8 +128,10 @@ export function idlFactory({ IDL }: { IDL: any }) {
     PaymentFailed: IDL.Text,
   });
 
-  const ResultAssessment    = IDL.Variant({ ok: Assessment,      err: Error });
-  const ResultCheckout      = IDL.Variant({ ok: CheckoutSession, err: Error });
+  const ResultAssessment    = IDL.Variant({ ok: Assessment,       err: Error });
+  const ResultCheckout      = IDL.Variant({ ok: CheckoutSession,  err: Error });
+  const ResultDelinquency   = IDL.Variant({ ok: DelinquencyRecord, err: Error });
+  const ResultUnit          = IDL.Variant({ ok: IDL.Null,          err: Error });
 
   const AgingBucket = IDL.Record({ unitId: IDL.Text, amountCents: IDL.Nat });
   const AgingReport = IDL.Record({
@@ -177,6 +208,13 @@ export function idlFactory({ IDL }: { IDL: any }) {
     setBudgetLine:              IDL.Func([IDL.Nat, IDL.Text, IDL.Nat],    [],                            []),
     // annual statement (#41)
     getAnnualStatement:         IDL.Func([IDL.Text, IDL.Nat],             [AnnualStatement],             ["query"]),
+    // collections (#28)
+    openCollectionCase:         IDL.Func([IDL.Text, IDL.Text],            [ResultDelinquency],           []),
+    escalateCollection:         IDL.Func([IDL.Text, CollectionStage, IDL.Text], [ResultDelinquency],     []),
+    resolveCollection:          IDL.Func([IDL.Text, IDL.Text],            [ResultUnit],                  []),
+    getDelinquentUnits:         IDL.Func([],                              [IDL.Vec(DelinquencyRecord)],  ["query"]),
+    getCollectionRecord:        IDL.Func([IDL.Text],                      [IDL.Opt(DelinquencyRecord)],  ["query"]),
+    getCollectionHistory:       IDL.Func([IDL.Text],                      [IDL.Vec(CollectionEvent)],    ["query"]),
   });
 }
 
@@ -253,6 +291,7 @@ export interface TreasuryMetrics {
   platformFeeCents: bigint;
   lateFeeCount:     bigint;
   remindersSent:    bigint;
+  delinquentCount:  bigint;
 }
 
 export type TreasuryError =
@@ -478,4 +517,80 @@ export async function setBudgetLine(
   const actor = await createActor() as any;
   if (!actor) return;
   return actor.setBudgetLine(BigInt(year), category, budgetedCents);
+}
+
+// ─── Collections (#28) ────────────────────────────────────────────────────────
+
+export type CollectionStage =
+  | { GracePeriod: null }
+  | { FirstNotice: null }
+  | { SecondNotice: null }
+  | { PreLien: null }
+  | { Lien: null }
+  | { Resolved: null };
+
+export interface CollectionEvent {
+  id:        string;
+  unitId:    string;
+  fromStage: CollectionStage;
+  toStage:   CollectionStage;
+  note:      string;
+  createdAt: bigint;
+  createdBy: import("@dfinity/principal").Principal;
+}
+
+export interface DelinquencyRecord {
+  unitId:            string;
+  stage:             CollectionStage;
+  totalOverdueCents: bigint;
+  oldestDueDateNs:   bigint;
+  openedAt:          bigint;
+  lastUpdatedAt:     bigint;
+}
+
+export async function getDelinquentUnits(): Promise<DelinquencyRecord[]> {
+  const actor = await createActor() as any;
+  if (!actor) return [];
+  return actor.getDelinquentUnits();
+}
+
+export async function getCollectionRecord(unitId: string): Promise<DelinquencyRecord | null> {
+  const actor = await createActor() as any;
+  if (!actor) return null;
+  const result = await actor.getCollectionRecord(unitId) as [] | [DelinquencyRecord];
+  return result[0] ?? null;
+}
+
+export async function getCollectionHistory(unitId: string): Promise<CollectionEvent[]> {
+  const actor = await createActor() as any;
+  if (!actor) return [];
+  return actor.getCollectionHistory(unitId);
+}
+
+export async function openCollectionCase(
+  unitId: string,
+  note:   string,
+): Promise<{ ok: DelinquencyRecord } | { err: TreasuryError }> {
+  const actor = await createActor() as any;
+  if (!actor) return { err: { NotFound: null } };
+  return actor.openCollectionCase(unitId, note);
+}
+
+export async function escalateCollection(
+  unitId:   string,
+  newStage: CollectionStage,
+  note:     string,
+): Promise<{ ok: DelinquencyRecord } | { err: TreasuryError }> {
+  const actor = await createActor() as any;
+  if (!actor) return { err: { NotFound: null } };
+  return actor.escalateCollection(unitId, newStage, note);
+}
+
+export async function resolveCollection(
+  unitId: string,
+  note:   string,
+): Promise<{ ok: null } | { err: TreasuryError }> {
+  const actor = await createActor() as any;
+  if (!actor) return { err: { NotFound: null } };
+  return actor.resolveCollection(unitId, note);
 }
