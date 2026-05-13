@@ -83,11 +83,22 @@ persistent actor Vendors {
 
   // ─── Stable State ─────────────────────────────────────────────────────────
 
-  private var vendorCounter : Nat = 0;
-  private var jobCounter    : Nat = 0;
+  private var vendorCounter    : Nat  = 0;
+  private var jobCounter       : Nat  = 0;
+  private var membersCanisterId : Text = "";
 
   private let vendors = Map.empty<Text, Vendor>();
   private let jobs    = Map.empty<Text, VendorJob>();
+
+  // ─── Board auth helper ────────────────────────────────────────────────────
+
+  type MembersActor = actor { isBoardMember : shared query (Principal) -> async Bool };
+
+  private func checkBoard(caller : Principal) : async Bool {
+    if (membersCanisterId == "") return false;
+    let mem : MembersActor = actor(membersCanisterId);
+    try { await mem.isBoardMember(caller) } catch _ { false }
+  };
 
   // ─── Helpers ──────────────────────────────────────────────────────────────
 
@@ -101,6 +112,16 @@ persistent actor Vendors {
     "JOB_" # Nat.toText(jobCounter)
   };
 
+  // ─── Wiring ───────────────────────────────────────────────────────────────
+
+  // One-time init: settable only when not yet configured (deploy-time wiring).
+  public shared(msg) func setMembersCanisterId(id : Text) : async Result.Result<(), Error> {
+    if (Principal.isAnonymous(msg.caller)) return #err(#NotAuthorized);
+    if (membersCanisterId != "") return #err(#NotAuthorized);
+    membersCanisterId := id;
+    #ok(())
+  };
+
   // ─── Mutations ────────────────────────────────────────────────────────────
 
   public shared(msg) func addVendor(
@@ -111,7 +132,7 @@ persistent actor Vendors {
     website:  Text,
     notes:    Text
   ) : async Result.Result<Vendor, Error> {
-    if (Principal.isAnonymous(msg.caller)) return #err(#NotAuthorized);
+    if (not (await checkBoard(msg.caller))) return #err(#NotAuthorized);
     if (Text.size(name) == 0) return #err(#InvalidInput("name required"));
     let vendor : Vendor = {
       id = nextVendorId();
@@ -135,7 +156,7 @@ persistent actor Vendors {
     website: Text,
     notes:   Text
   ) : async Result.Result<Vendor, Error> {
-    if (Principal.isAnonymous(msg.caller)) return #err(#NotAuthorized);
+    if (not (await checkBoard(msg.caller))) return #err(#NotAuthorized);
     switch (Map.get(vendors, Text.compare, id)) {
       case null      { #err(#NotFound) };
       case (?vendor) {
@@ -148,7 +169,7 @@ persistent actor Vendors {
   };
 
   public shared(msg) func removeVendor(id : Text) : async Result.Result<(), Error> {
-    if (Principal.isAnonymous(msg.caller)) return #err(#NotAuthorized);
+    if (not (await checkBoard(msg.caller))) return #err(#NotAuthorized);
     switch (Map.get(vendors, Text.compare, id)) {
       case null { #err(#NotFound) };
       case (?_) {
@@ -185,7 +206,7 @@ persistent actor Vendors {
     costCents:   ?Nat,
     notes:       Text
   ) : async Result.Result<VendorJob, Error> {
-    if (Principal.isAnonymous(msg.caller)) return #err(#NotAuthorized);
+    if (not (await checkBoard(msg.caller))) return #err(#NotAuthorized);
     if (Text.size(description) == 0) return #err(#InvalidInput("description required"));
     switch (Map.get(vendors, Text.compare, vendorId)) {
       case null      { #err(#NotFound) };
@@ -209,7 +230,7 @@ persistent actor Vendors {
     documentId: ?Text,
     expiryNs:   Int
   ) : async Result.Result<Vendor, Error> {
-    if (Principal.isAnonymous(msg.caller)) return #err(#NotAuthorized);
+    if (not (await checkBoard(msg.caller))) return #err(#NotAuthorized);
     switch (Map.get(vendors, Text.compare, vendorId)) {
       case null      { #err(#NotFound) };
       case (?vendor) {
@@ -227,7 +248,7 @@ persistent actor Vendors {
 
   // Bulk-import vendor directory (e.g. from AppFolio). Capped at 500 rows.
   public shared(msg) func bulkImportVendors(rows : [VendorImportRow]) : async VendorBulkResult {
-    if (Principal.isAnonymous(msg.caller)) {
+    if (not (await checkBoard(msg.caller))) {
       return { succeeded = 0; failed = rows.size(); errors = ["Not authorized"] };
     };
     let maxRows = 500;

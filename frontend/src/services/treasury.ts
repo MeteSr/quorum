@@ -258,12 +258,15 @@ export function idlFactory({ IDL }: { IDL: any }) {
   const ResultUnit2     = IDL.Variant({ ok: IDL.Null,       err: Error });
 
   return IDL.Service({
-    // wiring
-    setMembersCanisterId:       IDL.Func([IDL.Text],                     [],                            []),
-    setEmailConfig:             IDL.Func([EmailConfig],                   [],                            []),
-    configureStripe:            IDL.Func([StripeConfig],                  [],                            []),
-    setLateFeePolicy:           IDL.Func([LateFeePolicy],                 [],                            []),
-    setReminderPolicy:          IDL.Func([ReminderPolicy],                [],                            []),
+    // wiring (all board-gated, return Result)
+    setMembersCanisterId:       IDL.Func([IDL.Text],                     [ResultUnit],                  []),
+    setEmailConfig:             IDL.Func([EmailConfig],                   [ResultUnit],                  []),
+    configureStripe:            IDL.Func([StripeConfig],                  [ResultUnit],                  []),
+    setLateFeePolicy:           IDL.Func([LateFeePolicy],                 [ResultUnit],                  []),
+    setReminderPolicy:          IDL.Func([ReminderPolicy],                [ResultUnit],                  []),
+    setReserveFundBalance:      IDL.Func([IDL.Nat],                       [ResultUnit],                  []),
+    setBudgetLine:              IDL.Func([IDL.Nat, IDL.Text, IDL.Nat],    [ResultUnit],                  []),
+    setQBOConfig:               IDL.Func([QBOConfig],                     [ResultUnit],                  []),
     // board actions
     postAssessment:             IDL.Func([IDL.Text, IDL.Nat, AssessmentType, IDL.Text, IDL.Int], [ResultAssessment], []),
     markPaid:                   IDL.Func([IDL.Text],                      [ResultAssessment],            []),
@@ -289,8 +292,6 @@ export function idlFactory({ IDL }: { IDL: any }) {
     getReserveFundReport:       IDL.Func([],                              [ReserveFundReport],           ["query"]),
     getBudgetVsActual:          IDL.Func([IDL.Nat],                       [IDL.Vec(BudgetVsActual)],     ["query"]),
     getIncomeStatement:         IDL.Func([IDL.Int, IDL.Int],              [IncomeStatement],             ["query"]),
-    setReserveFundBalance:      IDL.Func([IDL.Nat],                       [],                            []),
-    setBudgetLine:              IDL.Func([IDL.Nat, IDL.Text, IDL.Nat],    [],                            []),
     // annual statement (#41)
     getAnnualStatement:         IDL.Func([IDL.Text, IDL.Nat],             [AnnualStatement],             ["query"]),
     // collections (#28)
@@ -301,7 +302,6 @@ export function idlFactory({ IDL }: { IDL: any }) {
     getCollectionRecord:        IDL.Func([IDL.Text],                      [IDL.Opt(DelinquencyRecord)],  ["query"]),
     getCollectionHistory:       IDL.Func([IDL.Text],                      [IDL.Vec(CollectionEvent)],    ["query"]),
     // QuickBooks (#19)
-    setQBOConfig:               IDL.Func([QBOConfig],                     [],                            []),
     getQBOStatus:               IDL.Func([],                              [QBOStatus],                   ["query"]),
     retrySync:                  IDL.Func([IDL.Text],                      [ResultQBOEntry],              []),
     getQBOSyncLog:              IDL.Func([],                              [IDL.Vec(QBOSyncEntry)],       ["query"]),
@@ -509,21 +509,21 @@ export async function getReminderPolicy(): Promise<ReminderPolicy | null> {
   return result[0] ?? null;
 }
 
-export async function setLateFeePolicy(policy: LateFeePolicy): Promise<void> {
+export async function setLateFeePolicy(policy: LateFeePolicy): Promise<{ ok: null } | { err: TreasuryError }> {
   const actor = await createActor() as any;
-  if (!actor) return;
+  if (!actor) return { err: { NotAuthorized: null } };
   return actor.setLateFeePolicy(policy);
 }
 
-export async function setReminderPolicy(policy: ReminderPolicy): Promise<void> {
+export async function setReminderPolicy(policy: ReminderPolicy): Promise<{ ok: null } | { err: TreasuryError }> {
   const actor = await createActor() as any;
-  if (!actor) return;
+  if (!actor) return { err: { NotAuthorized: null } };
   return actor.setReminderPolicy(policy);
 }
 
-export async function setEmailConfig(config: EmailConfig): Promise<void> {
+export async function setEmailConfig(config: EmailConfig): Promise<{ ok: null } | { err: TreasuryError }> {
   const actor = await createActor() as any;
-  if (!actor) return;
+  if (!actor) return { err: { NotAuthorized: null } };
   return actor.setEmailConfig(config);
 }
 
@@ -614,9 +614,9 @@ export async function getAnnualStatement(
   return actor.getAnnualStatement(unitId, BigInt(year));
 }
 
-export async function setReserveFundBalance(balance: bigint): Promise<void> {
+export async function setReserveFundBalance(balance: bigint): Promise<{ ok: null } | { err: TreasuryError }> {
   const actor = await createActor() as any;
-  if (!actor) return;
+  if (!actor) return { err: { NotAuthorized: null } };
   return actor.setReserveFundBalance(balance);
 }
 
@@ -624,9 +624,9 @@ export async function setBudgetLine(
   year:          number,
   category:      string,
   budgetedCents: bigint,
-): Promise<void> {
+): Promise<{ ok: null } | { err: TreasuryError }> {
   const actor = await createActor() as any;
-  if (!actor) return;
+  if (!actor) return { err: { NotAuthorized: null } };
   return actor.setBudgetLine(BigInt(year), category, budgetedCents);
 }
 
@@ -771,10 +771,16 @@ export interface CkUSDCStatus {
 
 // ─── QuickBooks service functions (#19) ──────────────────────────────────────
 
-export async function setQBOConfig(config: QBOConfig): Promise<void> {
+export async function setQBOConfig(config: QBOConfig): Promise<{ ok: null } | { err: TreasuryError }> {
   const actor = await createActor() as any;
-  if (!actor) return;
+  if (!actor) return { err: { NotAuthorized: null } };
   return actor.setQBOConfig(config);
+}
+
+export async function setMembersCanisterId(id: string): Promise<{ ok: null } | { err: TreasuryError }> {
+  const actor = await createActor() as any;
+  if (!actor) return { err: { NotAuthorized: null } };
+  return actor.setMembersCanisterId(id);
 }
 
 export async function getQBOStatus(): Promise<QBOStatus> {
