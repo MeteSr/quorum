@@ -474,34 +474,61 @@ persistent actor Treasury {
     await sendToQbo(entryId, payment, cfg);
   };
 
+  // ─── Board auth helper ────────────────────────────────────────────────────────
+
+  type MembersActor = actor { isBoardMember : shared query (Principal) -> async Bool };
+
+  private func checkBoard(caller : Principal) : async Bool {
+    if (membersCanisterId == "") return false;
+    let mem : MembersActor = actor(membersCanisterId);
+    try { await mem.isBoardMember(caller) } catch _ { false }
+  };
+
   // ─── Wiring ───────────────────────────────────────────────────────────────────
 
-  public shared func setMembersCanisterId(id : Text) : async () {
+  // One-time init: settable only when not yet configured (deploy-time wiring).
+  // After first set the canister must be upgraded to change the members canister.
+  public shared(msg) func setMembersCanisterId(id : Text) : async Result.Result<(), Error> {
+    if (Principal.isAnonymous(msg.caller)) return #err(#NotAuthorized);
+    if (membersCanisterId != "") return #err(#NotAuthorized);
     membersCanisterId := id;
+    #ok(())
   };
 
-  public shared func configureStripe(config: StripeConfig) : async () {
+  public shared(msg) func configureStripe(config: StripeConfig) : async Result.Result<(), Error> {
+    if (not (await checkBoard(msg.caller))) return #err(#NotAuthorized);
     stripeConfig := ?config;
+    #ok(())
   };
 
-  public shared func setLateFeePolicy(policy: LateFeePolicy) : async () {
+  public shared(msg) func setLateFeePolicy(policy: LateFeePolicy) : async Result.Result<(), Error> {
+    if (not (await checkBoard(msg.caller))) return #err(#NotAuthorized);
     lateFeePolicy := ?policy;
+    #ok(())
   };
 
-  public shared func setReminderPolicy(policy: ReminderPolicy) : async () {
+  public shared(msg) func setReminderPolicy(policy: ReminderPolicy) : async Result.Result<(), Error> {
+    if (not (await checkBoard(msg.caller))) return #err(#NotAuthorized);
     reminderPolicy := ?policy;
+    #ok(())
   };
 
-  public shared func setEmailConfig(config: EmailConfig) : async () {
+  public shared(msg) func setEmailConfig(config: EmailConfig) : async Result.Result<(), Error> {
+    if (not (await checkBoard(msg.caller))) return #err(#NotAuthorized);
     emailConfig := ?config;
+    #ok(())
   };
 
-  public shared func setReserveFundBalance(balance : Nat) : async () {
+  public shared(msg) func setReserveFundBalance(balance : Nat) : async Result.Result<(), Error> {
+    if (not (await checkBoard(msg.caller))) return #err(#NotAuthorized);
     reserveFundBalance := balance;
+    #ok(())
   };
 
-  public shared func setQBOConfig(config : QBOConfig) : async () {
+  public shared(msg) func setQBOConfig(config : QBOConfig) : async Result.Result<(), Error> {
+    if (not (await checkBoard(msg.caller))) return #err(#NotAuthorized);
     qboConfig := ?config;
+    #ok(())
   };
 
   public query func getQBOStatus() : async QBOStatus {
@@ -511,9 +538,11 @@ persistent actor Treasury {
     }
   };
 
-  public shared func setBudgetLine(year : Nat, category : Text, budgetedCents : Nat) : async () {
+  public shared(msg) func setBudgetLine(year : Nat, category : Text, budgetedCents : Nat) : async Result.Result<(), Error> {
+    if (not (await checkBoard(msg.caller))) return #err(#NotAuthorized);
     let key = Nat.toText(year) # "#" # category;
     Map.add(budgetLines, Text.compare, key, { year; category; budgetedCents });
+    #ok(())
   };
 
   // ─── Year helper ──────────────────────────────────────────────────────────────
@@ -562,6 +591,7 @@ persistent actor Treasury {
   };
 
   public shared(msg) func markPaid(id : Text) : async Result.Result<Assessment, Error> {
+    if (not (await checkBoard(msg.caller))) return #err(#NotAuthorized);
     switch (Map.get(assessments, Text.compare, id)) {
       case null  { #err(#NotFound) };
       case (?a)  {
@@ -573,6 +603,7 @@ persistent actor Treasury {
   };
 
   public shared(msg) func waiveAssessment(id : Text) : async Result.Result<Assessment, Error> {
+    if (not (await checkBoard(msg.caller))) return #err(#NotAuthorized);
     switch (Map.get(assessments, Text.compare, id)) {
       case null  { #err(#NotFound) };
       case (?a)  {
@@ -584,6 +615,7 @@ persistent actor Treasury {
   };
 
   public shared(msg) func waiveLateFee(assessmentId : Text, reason : Text) : async Result.Result<Assessment, Error> {
+    if (not (await checkBoard(msg.caller))) return #err(#NotAuthorized);
     switch (Map.get(assessments, Text.compare, assessmentId)) {
       case null  { #err(#NotFound) };
       case (?a)  {
@@ -876,6 +908,7 @@ persistent actor Treasury {
   };
 
   public shared(msg) func openCollectionCase(unitId : Text, note : Text) : async Result.Result<DelinquencyRecord, Error> {
+    if (not (await checkBoard(msg.caller))) return #err(#NotAuthorized);
     let now = Time.now();
     switch (Map.get(collectionCases, Text.compare, unitId)) {
       case (?c) {
@@ -904,6 +937,7 @@ persistent actor Treasury {
   };
 
   public shared(msg) func escalateCollection(unitId : Text, newStage : CollectionStage, note : Text) : async Result.Result<DelinquencyRecord, Error> {
+    if (not (await checkBoard(msg.caller))) return #err(#NotAuthorized);
     switch (Map.get(collectionCases, Text.compare, unitId)) {
       case null  { #err(#NotFound) };
       case (?c)  {
@@ -927,6 +961,7 @@ persistent actor Treasury {
   };
 
   public shared(msg) func resolveCollection(unitId : Text, note : Text) : async Result.Result<(), Error> {
+    if (not (await checkBoard(msg.caller))) return #err(#NotAuthorized);
     switch (Map.get(collectionCases, Text.compare, unitId)) {
       case null  { #err(#NotFound) };
       case (?c)  {
@@ -949,7 +984,8 @@ persistent actor Treasury {
   };
 
   // Board: retry a failed QBO sync entry.
-  public shared func retrySync(entryId : Text) : async Result.Result<QBOSyncEntry, Error> {
+  public shared(msg) func retrySync(entryId : Text) : async Result.Result<QBOSyncEntry, Error> {
+    if (not (await checkBoard(msg.caller))) return #err(#NotAuthorized);
     let cfg = switch (qboConfig) {
       case null  { return #err(#InvalidInput("QBO not configured")) };
       case (?c)  { c };
@@ -1037,7 +1073,7 @@ persistent actor Treasury {
   // Import historical transaction data (e.g. from AppFolio CSV). Capped at 500 rows.
   // Creates an Assessment with status=Paid for each valid row (historical records).
   public shared(msg) func bulkImportTransactions(rows : [TxImportRow]) : async TxBulkResult {
-    if (Principal.isAnonymous(msg.caller)) {
+    if (not (await checkBoard(msg.caller))) {
       return { succeeded = 0; failed = rows.size(); errors = ["Not authorized"] };
     };
     let maxRows = 500;
@@ -1093,11 +1129,7 @@ persistent actor Treasury {
     usdcRateCents     : Nat,
     platformFeeBps    : Nat
   ) : async Result.Result<CkUSDCStatus, Error> {
-    if (membersCanisterId == "") return #err(#NotAuthorized);
-    type Mem = actor { isBoardMember : shared query (Principal) -> async Bool };
-    let memActor : Mem = actor(membersCanisterId);
-    let isBoard = try { await memActor.isBoardMember(msg.caller) } catch _ { false };
-    if (not isBoard) return #err(#NotAuthorized);
+    if (not (await checkBoard(msg.caller))) return #err(#NotAuthorized);
     if (Text.size(treasuryPrincipal) == 0) return #err(#InvalidInput("treasuryPrincipal required"));
     if (usdcRateCents == 0) return #err(#InvalidInput("usdcRateCents must be > 0"));
     let cfg : CkUSDCConfig = {
@@ -1117,6 +1149,7 @@ persistent actor Treasury {
   };
 
   public shared(msg) func disableCkUSDC() : async Result.Result<(), Error> {
+    if (not (await checkBoard(msg.caller))) return #err(#NotAuthorized);
     switch (ckUSDCConfig) {
       case null { return #err(#NotFound) };
       case (?cfg) {
@@ -1127,7 +1160,8 @@ persistent actor Treasury {
   };
 
   // Board-only: set USDC exchange rate (cents per 1 USDC, e.g. 100 = $1.00).
-  public shared func setUsdcRate(rateCents : Nat) : async Result.Result<(), Error> {
+  public shared(msg) func setUsdcRate(rateCents : Nat) : async Result.Result<(), Error> {
+    if (not (await checkBoard(msg.caller))) return #err(#NotAuthorized);
     switch (ckUSDCConfig) {
       case null { #err(#NotFound) };
       case (?cfg) {
@@ -1146,6 +1180,7 @@ persistent actor Treasury {
     amountUsdc  : Nat,
     memo        : Text
   ) : async Result.Result<CkUSDCPayment, Error> {
+    if (not (await checkBoard(msg.caller))) return #err(#NotAuthorized);
     let cfg = switch (ckUSDCConfig) {
       case null  { return #err(#InvalidInput("ckUSDC not configured")) };
       case (?c)  { c };

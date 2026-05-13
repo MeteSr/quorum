@@ -74,18 +74,22 @@ export function idlFactory({ IDL }: { IDL: any }) {
   const ResultNull      = IDL.Variant({ ok: IDL.Null,  err: VendorError });
 
   return IDL.Service({
+    // wiring
+    setMembersCanisterId: IDL.Func([IDL.Text],                                                          [ResultNull],         []),
+    // mutations (board-gated)
     addVendor:           IDL.Func([IDL.Text, VendorCategory, IDL.Text, IDL.Text, IDL.Text, IDL.Text], [ResultVendor],    []),
     updateVendor:        IDL.Func([IDL.Text, IDL.Text, IDL.Text, IDL.Text, IDL.Text, IDL.Text],        [ResultVendor],    []),
     removeVendor:        IDL.Func([IDL.Text],                                                           [ResultNull],      []),
     addVendorReview:     IDL.Func([IDL.Text, IDL.Nat],                                                 [ResultVendor],    []),
     logJob:              IDL.Func([IDL.Text, IDL.Text, IDL.Opt(IDL.Int), IDL.Opt(IDL.Nat), IDL.Text],  [ResultVendorJob], []),
     updateCOI:           IDL.Func([IDL.Text, IDL.Opt(IDL.Text), IDL.Int],                              [ResultVendor],    []),
+    bulkImportVendors:   IDL.Func([IDL.Vec(VendorImportRow)],                                          [VendorBulkResult],   []),
+    // queries
     getVendor:           IDL.Func([IDL.Text],                                                           [IDL.Opt(Vendor)], ["query"]),
     getAllVendors:        IDL.Func([],                                                                   [IDL.Vec(Vendor)], ["query"]),
     getVendorsByCategory: IDL.Func([VendorCategory],                                                   [IDL.Vec(Vendor)], ["query"]),
     getJobsForVendor:    IDL.Func([IDL.Text],                                                           [IDL.Vec(VendorJob)], ["query"]),
-    getExpiringCOIs:      IDL.Func([IDL.Nat],                                                            [IDL.Vec(Vendor)],    ["query"]),
-    bulkImportVendors:    IDL.Func([IDL.Vec(VendorImportRow)],                                          [VendorBulkResult],   []),
+    getExpiringCOIs:     IDL.Func([IDL.Nat],                                                            [IDL.Vec(Vendor)],    ["query"]),
   });
 }
 
@@ -153,6 +157,8 @@ export interface VendorBulkResult {
 
 // ─── Actor ────────────────────────────────────────────────────────────────────
 
+export type VendorsError = VendorError;
+
 async function createActor() {
   if (!CANISTER_ID_VENDORS) return null;
   const agent = await getAgent();
@@ -160,6 +166,12 @@ async function createActor() {
 }
 
 // ─── Service ──────────────────────────────────────────────────────────────────
+
+export async function setMembersCanisterId(id: string): Promise<{ ok: null } | { err: VendorError }> {
+  const actor = await createActor() as any;
+  if (!actor) return { err: { NotAuthorized: null } };
+  return actor.setMembersCanisterId(id);
+}
 
 export async function addVendor(
   name:     string,
