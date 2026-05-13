@@ -48,6 +48,7 @@ describe("members IDL factory", () => {
     const expected = [
       "assignRole",
       "assignStaffRole",
+      "bulkImportUnits",
       "canApprove",
       "createShareLink",
       "deactivateMember",
@@ -289,14 +290,20 @@ describe("treasury IDL factory", () => {
 
   test("exposes all expected methods", () => {
     const expected = [
+      "bulkImportTransactions",
       "configureStripe",
+      "confirmCkUSDCPayment",
       "createDuesCheckoutSession",
+      "disableCkUSDC",
+      "enableCkUSDC",
       "escalateCollection",
       "getAgingReport",
       "getAnnualStatement",
       "getAssessment",
       "getAssessmentsForUnit",
       "getBudgetVsActual",
+      "getCkUSDCPayments",
+      "getCkUSDCStatus",
       "getCollectionHistory",
       "getCollectionRecord",
       "getDelinquentUnits",
@@ -323,6 +330,7 @@ describe("treasury IDL factory", () => {
       "setQBOConfig",
       "setReminderPolicy",
       "setReserveFundBalance",
+      "setUsdcRate",
       "transform",
       "verifyDuesSession",
       "waiveAssessment",
@@ -863,6 +871,7 @@ describe("vendors IDL factory", () => {
     const expected = [
       "addVendor",
       "addVendorReview",
+      "bulkImportVendors",
       "getAllVendors",
       "getExpiringCOIs",
       "getJobsForVendor",

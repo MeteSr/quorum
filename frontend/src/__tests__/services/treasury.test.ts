@@ -42,6 +42,16 @@ import {
   setQBOConfig,
   getQBOSyncLog,
   retrySync,
+  bulkImportTransactions,
+  getCkUSDCStatus,
+  getCkUSDCPayments,
+  enableCkUSDC,
+  disableCkUSDC,
+  setUsdcRate,
+  confirmCkUSDCPayment,
+  type TxImportRow,
+  type CkUSDCStatus,
+  type CkUSDCPayment,
 } from "@/services/treasury";
 
 const MOCK_ASSESSMENT = {
@@ -192,6 +202,13 @@ function makeMockActor(overrides: Record<string, any> = {}) {
     setQBOConfig:              vi.fn().mockResolvedValue(undefined),
     getQBOSyncLog:             vi.fn().mockResolvedValue([MOCK_QBO_SYNC_ENTRY]),
     retrySync:                 vi.fn().mockResolvedValue({ ok: MOCK_QBO_SYNC_ENTRY }),
+    bulkImportTransactions:    vi.fn().mockResolvedValue({ succeeded: BigInt(5), failed: BigInt(1), errors: ["Row for unit  has zero amount"] }),
+    getCkUSDCStatus:           vi.fn().mockResolvedValue({ enabled: false, treasuryPrincipal: "", usdcRateCents: BigInt(100), platformFeeBps: BigInt(10), paymentCount: BigInt(0) }),
+    getCkUSDCPayments:         vi.fn().mockResolvedValue([]),
+    enableCkUSDC:              vi.fn().mockResolvedValue({ ok: { enabled: true, treasuryPrincipal: "aaaaa-aa", usdcRateCents: BigInt(100), platformFeeBps: BigInt(10), paymentCount: BigInt(0) } }),
+    disableCkUSDC:             vi.fn().mockResolvedValue({ ok: null }),
+    setUsdcRate:               vi.fn().mockResolvedValue({ ok: null }),
+    confirmCkUSDCPayment:      vi.fn().mockResolvedValue({ ok: { id: "CKUSDC_1", unitId: "10A", amountUsdc: BigInt(15_000_000_000), amountCents: BigInt(15000), blockIndex: BigInt(1234567), memo: "10A", confirmedAt: BigInt(1_700_000_000_000_000_000), confirmedBy: { toText: () => "board-principal" } as any } }),
     ...overrides,
   };
 }
@@ -635,5 +652,116 @@ describe("treasury service — retrySync (#19)", () => {
     const result = await retrySync("QBO_999");
     expect("err" in result).toBe(true);
     if ("err" in result) expect("NotFound" in result.err).toBe(true);
+  });
+});
+
+describe("treasury service — bulkImportTransactions (#22)", () => {
+  beforeEach(() => vi.mocked(Actor.createActor).mockReturnValue(makeMockActor() as any));
+
+  it("returns succeeded and failed counts", async () => {
+    const result = await bulkImportTransactions([]);
+    expect(result.succeeded).toBe(BigInt(5));
+    expect(result.failed).toBe(BigInt(1));
+  });
+
+  it("returns error messages array", async () => {
+    const result = await bulkImportTransactions([]);
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors[0]).toContain("zero amount");
+  });
+
+  it("passes rows array to actor", async () => {
+    const spy = vi.fn().mockResolvedValue({ succeeded: BigInt(1), failed: BigInt(0), errors: [] });
+    vi.mocked(Actor.createActor).mockReturnValue(makeMockActor({ bulkImportTransactions: spy }) as any);
+    const row: TxImportRow = { unitId: "10A", dateNs: BigInt(1_700_000_000_000_000_000), amountCents: BigInt(15000), category: { MonthlyDues: null } as any, description: "May dues" };
+    await bulkImportTransactions([row]);
+    expect(spy).toHaveBeenCalledWith([row]);
+  });
+
+  it("returns zero-succeeded when canister not deployed", async () => {
+    (process.env as any).CANISTER_ID_TREASURY = "";
+    vi.resetModules();
+    const { bulkImportTransactions: fn } = await import("@/services/treasury");
+    const result = await fn([]);
+    expect(result.succeeded).toBe(BigInt(0));
+    (process.env as any).CANISTER_ID_TREASURY = "rdmx6-jaaaa-aaaah-test-cai";
+  });
+});
+
+describe("treasury service — getCkUSDCStatus (#23)", () => {
+  beforeEach(() => vi.mocked(Actor.createActor).mockReturnValue(makeMockActor() as any));
+
+  it("returns disabled status by default", async () => {
+    const status = await getCkUSDCStatus();
+    expect(status.enabled).toBe(false);
+    expect(status.treasuryPrincipal).toBe("");
+  });
+
+  it("returns enabled status after enableCkUSDC", async () => {
+    vi.mocked(Actor.createActor).mockReturnValue(
+      makeMockActor({ getCkUSDCStatus: vi.fn().mockResolvedValue({ enabled: true, treasuryPrincipal: "aaaaa-aa", usdcRateCents: BigInt(100), platformFeeBps: BigInt(10), paymentCount: BigInt(0) }) }) as any
+    );
+    const status = await getCkUSDCStatus();
+    expect(status.enabled).toBe(true);
+    expect(status.treasuryPrincipal).toBe("aaaaa-aa");
+  });
+});
+
+describe("treasury service — enableCkUSDC (#23)", () => {
+  beforeEach(() => vi.mocked(Actor.createActor).mockReturnValue(makeMockActor() as any));
+
+  it("returns ok with CkUSDCStatus on success", async () => {
+    const res = await enableCkUSDC("aaaaa-aa", BigInt(100), BigInt(10));
+    expect("ok" in res).toBe(true);
+    if ("ok" in res) {
+      expect(res.ok.enabled).toBe(true);
+      expect(res.ok.treasuryPrincipal).toBe("aaaaa-aa");
+    }
+  });
+
+  it("passes all three args to actor", async () => {
+    const spy = vi.fn().mockResolvedValue({ ok: { enabled: true, treasuryPrincipal: "t", usdcRateCents: BigInt(100), platformFeeBps: BigInt(10), paymentCount: BigInt(0) } });
+    vi.mocked(Actor.createActor).mockReturnValue(makeMockActor({ enableCkUSDC: spy }) as any);
+    await enableCkUSDC("test-principal", BigInt(150), BigInt(5));
+    expect(spy).toHaveBeenCalledWith("test-principal", BigInt(150), BigInt(5));
+  });
+});
+
+describe("treasury service — confirmCkUSDCPayment (#23)", () => {
+  beforeEach(() => vi.mocked(Actor.createActor).mockReturnValue(makeMockActor() as any));
+
+  it("returns ok with CkUSDCPayment on success", async () => {
+    const res = await confirmCkUSDCPayment(BigInt(1234567), "10A", BigInt(15_000_000_000), "10A");
+    expect("ok" in res).toBe(true);
+    if ("ok" in res) {
+      expect(res.ok.unitId).toBe("10A");
+      expect(typeof res.ok.amountCents).toBe("bigint");
+    }
+  });
+
+  it("passes all four args to actor", async () => {
+    const spy = vi.fn().mockResolvedValue({ ok: { id: "CKUSDC_1", unitId: "10A", amountUsdc: BigInt(0), amountCents: BigInt(0), blockIndex: BigInt(0), memo: "", confirmedAt: BigInt(0), confirmedBy: {} as any } });
+    vi.mocked(Actor.createActor).mockReturnValue(makeMockActor({ confirmCkUSDCPayment: spy }) as any);
+    await confirmCkUSDCPayment(BigInt(999), "11B", BigInt(20_000_000_000), "11B-memo");
+    expect(spy).toHaveBeenCalledWith(BigInt(999), "11B", BigInt(20_000_000_000), "11B-memo");
+  });
+});
+
+describe("treasury service — getCkUSDCPayments (#23)", () => {
+  beforeEach(() => vi.mocked(Actor.createActor).mockReturnValue(makeMockActor() as any));
+
+  it("returns empty array when no payments", async () => {
+    const payments = await getCkUSDCPayments();
+    expect(payments).toEqual([]);
+  });
+
+  it("returns payments when present", async () => {
+    const mockPayment: CkUSDCPayment = { id: "CKUSDC_1", unitId: "10A", amountUsdc: BigInt(100_000_000), amountCents: BigInt(100), blockIndex: BigInt(1), memo: "10A", confirmedAt: BigInt(0), confirmedBy: {} as any };
+    vi.mocked(Actor.createActor).mockReturnValue(
+      makeMockActor({ getCkUSDCPayments: vi.fn().mockResolvedValue([mockPayment]) }) as any
+    );
+    const payments = await getCkUSDCPayments();
+    expect(payments).toHaveLength(1);
+    expect(payments[0].unitId).toBe("10A");
   });
 });

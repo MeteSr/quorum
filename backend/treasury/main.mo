@@ -217,6 +217,46 @@ persistent actor Treasury {
     tokenExpiry: Time.Time;
   };
 
+  public type TxImportRow = {
+    unitId:      Text;
+    dateNs:      Int;
+    amountCents: Nat;
+    category:    AssessmentType;
+    description: Text;
+  };
+
+  public type TxBulkResult = {
+    succeeded : Nat;
+    failed    : Nat;
+    errors    : [Text];
+  };
+
+  public type CkUSDCConfig = {
+    enabled:           Bool;
+    treasuryPrincipal: Text;    // Principal text that residents send ckUSDC to
+    usdcRateCents:     Nat;     // 1 USDC = N cents (e.g. 100 = $1.00)
+    platformFeeBps:    Nat;     // e.g. 10 = 0.1%
+  };
+
+  public type CkUSDCPayment = {
+    id:          Text;
+    unitId:      Text;
+    amountUsdc:  Nat;     // in e8s (1 USDC = 100_000_000 e8s)
+    amountCents: Nat;     // converted at time of confirmation
+    blockIndex:  Nat;
+    memo:        Text;
+    confirmedAt: Time.Time;
+    confirmedBy: Principal;
+  };
+
+  public type CkUSDCStatus = {
+    enabled:           Bool;
+    treasuryPrincipal: Text;
+    usdcRateCents:     Nat;
+    platformFeeBps:    Nat;
+    paymentCount:      Nat;
+  };
+
   // ─── IC HTTP Outcall interface ────────────────────────────────────────────────
 
   public type HttpHeader   = { name : Text; value : Text };
@@ -273,6 +313,10 @@ persistent actor Treasury {
   private let qboSyncLog     = Map.empty<Text, QBOSyncEntry>();
   private var qboSyncCounter : Nat = 0;
 
+  private var ckUSDCConfig    : ?CkUSDCConfig = null;
+  private let ckUSDCPayments  = Map.empty<Text, CkUSDCPayment>();
+  private var ckUSDCCounter   : Nat = 0;
+
   // Resets on upgrade — safe, idempotency keys prevent double-work
   transient var lastScanDayNs : Int = 0;
 
@@ -305,6 +349,11 @@ persistent actor Treasury {
   private func nextQboId() : Text {
     qboSyncCounter += 1;
     "QBO_" # Nat.toText(qboSyncCounter)
+  };
+
+  private func nextCkId() : Text {
+    ckUSDCCounter += 1;
+    "CKUSDC_" # Nat.toText(ckUSDCCounter)
   };
 
   // ─── Stripe helpers ──────────────────────────────────────────────────────────
@@ -983,6 +1032,165 @@ persistent actor Treasury {
 
   public query func getQBOSyncLog() : async [QBOSyncEntry] {
     Iter.toArray(Map.values(qboSyncLog))
+  };
+
+  // Import historical transaction data (e.g. from AppFolio CSV). Capped at 500 rows.
+  // Creates an Assessment with status=Paid for each valid row (historical records).
+  public shared(msg) func bulkImportTransactions(rows : [TxImportRow]) : async TxBulkResult {
+    if (Principal.isAnonymous(msg.caller)) {
+      return { succeeded = 0; failed = rows.size(); errors = ["Not authorized"] };
+    };
+    let maxRows = 500;
+    let rowsToProcess = Array.tabulate<TxImportRow>(
+      if (rows.size() < maxRows) rows.size() else maxRows, func(i) { rows[i] }
+    );
+    var succeeded = 0;
+    var failed    = 0;
+    var errors : [Text] = [];
+    for (row in rowsToProcess.vals()) {
+      if (row.amountCents == 0) {
+        failed += 1;
+        errors := Array.concat(errors, ["Row for unit " # row.unitId # " has zero amount"]);
+      } else if (Text.size(row.unitId) == 0) {
+        failed += 1;
+        errors := Array.concat(errors, ["Row missing unitId"]);
+      } else {
+        let aId = nextId();
+        let a : Assessment = {
+          id          = aId;
+          unitId      = row.unitId;
+          amountCents = row.amountCents;
+          kind        = row.category;
+          description = if (Text.size(row.description) > 0) row.description else "Imported transaction";
+          dueDate     = row.dateNs;
+          status      = #Paid;
+          paidAt      = ?row.dateNs;
+          createdAt   = Time.now();
+          createdBy   = msg.caller;
+        };
+        Map.add(assessments, Text.compare, aId, a);
+        let pId = nextPayId();
+        let p : DuesPayment = {
+          id               = pId;
+          assessmentId     = aId;
+          unitId           = row.unitId;
+          amountCents      = row.amountCents;
+          platformFeeCents = 0;
+          stripePaymentId  = "IMPORT-" # aId;
+          paidAt           = row.dateNs;
+        };
+        Map.add(duesPayments, Text.compare, pId, p);
+        succeeded += 1;
+      };
+    };
+    { succeeded; failed; errors }
+  };
+
+  // Board-only: enable ckUSDC payments. treasuryPrincipal is the ICP principal
+  // residents send ckUSDC to (typically this canister's principal).
+  public shared(msg) func enableCkUSDC(
+    treasuryPrincipal : Text,
+    usdcRateCents     : Nat,
+    platformFeeBps    : Nat
+  ) : async Result.Result<CkUSDCStatus, Error> {
+    if (membersCanisterId == "") return #err(#NotAuthorized);
+    type Mem = actor { isBoardMember : shared query (Principal) -> async Bool };
+    let memActor : Mem = actor(membersCanisterId);
+    let isBoard = try { await memActor.isBoardMember(msg.caller) } catch _ { false };
+    if (not isBoard) return #err(#NotAuthorized);
+    if (Text.size(treasuryPrincipal) == 0) return #err(#InvalidInput("treasuryPrincipal required"));
+    if (usdcRateCents == 0) return #err(#InvalidInput("usdcRateCents must be > 0"));
+    let cfg : CkUSDCConfig = {
+      enabled = true;
+      treasuryPrincipal;
+      usdcRateCents;
+      platformFeeBps;
+    };
+    ckUSDCConfig := ?cfg;
+    #ok({
+      enabled           = true;
+      treasuryPrincipal;
+      usdcRateCents;
+      platformFeeBps;
+      paymentCount      = Map.size(ckUSDCPayments);
+    })
+  };
+
+  public shared(msg) func disableCkUSDC() : async Result.Result<(), Error> {
+    switch (ckUSDCConfig) {
+      case null { return #err(#NotFound) };
+      case (?cfg) {
+        ckUSDCConfig := ?{ cfg with enabled = false };
+        #ok(())
+      };
+    }
+  };
+
+  // Board-only: set USDC exchange rate (cents per 1 USDC, e.g. 100 = $1.00).
+  public shared func setUsdcRate(rateCents : Nat) : async Result.Result<(), Error> {
+    switch (ckUSDCConfig) {
+      case null { #err(#NotFound) };
+      case (?cfg) {
+        if (rateCents == 0) return #err(#InvalidInput("rateCents must be > 0"));
+        ckUSDCConfig := ?{ cfg with usdcRateCents = rateCents };
+        #ok(())
+      };
+    }
+  };
+
+  // Board-only: manually confirm a ckUSDC payment after verifying on-chain.
+  // amountUsdc is in e8s (1 USDC = 100_000_000 e8s).
+  public shared(msg) func confirmCkUSDCPayment(
+    blockIndex  : Nat,
+    unitId      : Text,
+    amountUsdc  : Nat,
+    memo        : Text
+  ) : async Result.Result<CkUSDCPayment, Error> {
+    let cfg = switch (ckUSDCConfig) {
+      case null  { return #err(#InvalidInput("ckUSDC not configured")) };
+      case (?c)  { c };
+    };
+    if (not cfg.enabled) return #err(#InvalidInput("ckUSDC is disabled"));
+    if (amountUsdc == 0) return #err(#InvalidInput("amountUsdc must be > 0"));
+    let amountCents = amountUsdc * cfg.usdcRateCents / 100_000_000;
+    let payment : CkUSDCPayment = {
+      id          = nextCkId();
+      unitId;
+      amountUsdc;
+      amountCents;
+      blockIndex;
+      memo;
+      confirmedAt = Time.now();
+      confirmedBy = msg.caller;
+    };
+    Map.add(ckUSDCPayments, Text.compare, payment.id, payment);
+    // Also record as a paid assessment
+    let aId = nextId();
+    let a : Assessment = {
+      id          = aId;
+      unitId;
+      amountCents;
+      kind        = #MonthlyDues;
+      description = "ckUSDC payment (block #" # Nat.toText(blockIndex) # ")";
+      dueDate     = Time.now();
+      status      = #Paid;
+      paidAt      = ?Time.now();
+      createdAt   = Time.now();
+      createdBy   = msg.caller;
+    };
+    Map.add(assessments, Text.compare, aId, a);
+    #ok(payment)
+  };
+
+  public query func getCkUSDCStatus() : async CkUSDCStatus {
+    switch (ckUSDCConfig) {
+      case null { { enabled = false; treasuryPrincipal = ""; usdcRateCents = 100; platformFeeBps = 10; paymentCount = 0 } };
+      case (?c) { { enabled = c.enabled; treasuryPrincipal = c.treasuryPrincipal; usdcRateCents = c.usdcRateCents; platformFeeBps = c.platformFeeBps; paymentCount = Map.size(ckUSDCPayments) } };
+    }
+  };
+
+  public query func getCkUSDCPayments() : async [CkUSDCPayment] {
+    Iter.toArray(Map.values(ckUSDCPayments))
   };
 
   public query func metrics() : async {

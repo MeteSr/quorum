@@ -115,6 +115,19 @@ export function idlFactory({ IDL }: { IDL: any }) {
     InvalidCode:   IDL.Text,
   });
 
+  const UnitImportRow = IDL.Record({
+    unitId:    IDL.Text,
+    ownerName: IDL.Text,
+    email:     IDL.Text,
+  });
+
+  const UnitBulkResult = IDL.Record({
+    succeeded: IDL.Nat,
+    failed:    IDL.Nat,
+    codes:     IDL.Vec(IDL.Tuple(IDL.Text, IDL.Text)),
+    errors:    IDL.Vec(IDL.Text),
+  });
+
   const ResultUnit         = IDL.Variant({ ok: IDL.Null,           err: Error });
   const ResultMember       = IDL.Variant({ ok: Member,             err: Error });
   const ResultProfile      = IDL.Variant({ ok: CommunityProfile,   err: Error });
@@ -167,6 +180,7 @@ export function idlFactory({ IDL }: { IDL: any }) {
     canApprove:                 IDL.Func([IDL.Principal, IDL.Nat],                  [IDL.Bool],                      ["query"]),
     logApprovalAction:          IDL.Func([IDL.Text, IDL.Variant({ Approved: IDL.Null, Rejected: IDL.Null }), IDL.Text], [], []),
     getApprovalLog:             IDL.Func([],                                        [ResultApprovalLogs],            ["query"]),
+    bulkImportUnits:            IDL.Func([IDL.Vec(UnitImportRow)],                  [UnitBulkResult],                []),
   });
 }
 
@@ -276,6 +290,19 @@ export type MembersError =
   | { AlreadyExists: null }
   | { InvalidInput: string }
   | { InvalidCode: string };
+
+export interface UnitImportRow {
+  unitId:    string;
+  ownerName: string;
+  email:     string;
+}
+
+export interface UnitBulkResult {
+  succeeded: bigint;
+  failed:    bigint;
+  codes:     [string, string][];
+  errors:    string[];
+}
 
 // ─── Actor ────────────────────────────────────────────────────────────────────
 
@@ -491,4 +518,12 @@ export async function getApprovalLog(): Promise<{ ok: ApprovalLog[] } | { err: M
   const actor = await createActor() as any;
   if (!actor) return { ok: [] };
   return actor.getApprovalLog();
+}
+
+export async function bulkImportUnits(
+  rows: UnitImportRow[]
+): Promise<UnitBulkResult> {
+  const actor = await createActor() as any;
+  if (!actor) return { succeeded: BigInt(0), failed: BigInt(rows.length), codes: [], errors: ["canister not deployed"] };
+  return actor.bulkImportUnits(rows);
 }

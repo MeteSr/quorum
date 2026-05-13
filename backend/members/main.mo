@@ -138,6 +138,19 @@ persistent actor Members {
     #InvalidCode:  Text;
   };
 
+  public type UnitImportRow = {
+    unitId:    Text;
+    ownerName: Text;
+    email:     Text;
+  };
+
+  public type UnitBulkResult = {
+    succeeded : Nat;
+    failed    : Nat;
+    codes     : [(Text, Text)];   // (unitId, inviteCode) for each created invite
+    errors    : [Text];
+  };
+
   // ─── Stable State ─────────────────────────────────────────────────────────────
 
   private var adminPrincipal          : ?Principal        = null;
@@ -703,6 +716,53 @@ persistent actor Members {
       if (m.unitId == unitId and m.isActive) return ?m;
     };
     null
+  };
+
+  // Board-only: bulk-import unit roster from CSV export. Creates one-use invite codes per unit.
+  // Rows capped at 500; units already registered are skipped (not an error).
+  public shared(msg) func bulkImportUnits(rows : [UnitImportRow]) : async UnitBulkResult {
+    if (not isAdmin(msg.caller) and not isBoard(msg.caller)) {
+      return { succeeded = 0; failed = rows.size(); codes = []; errors = ["Not authorized"] };
+    };
+    let maxRows = 500;
+    let rowsToProcess = Array.tabulate<UnitImportRow>(
+      if (rows.size() < maxRows) rows.size() else maxRows, func(i) { rows[i] }
+    );
+    var succeeded = 0;
+    var failed    = 0;
+    var codes : [(Text, Text)] = [];
+    var errors : [Text] = [];
+    for (row in rowsToProcess.vals()) {
+      if (Text.size(row.unitId) == 0) {
+        failed += 1;
+        errors := Array.concat(errors, ["Row missing unitId"]);
+      } else {
+        // Skip if unit already has an active member
+        var alreadyRegistered = false;
+        for (m in Map.values(members)) {
+          if (m.unitId == row.unitId and m.isActive) { alreadyRegistered := true };
+        };
+        if (alreadyRegistered) {
+          failed += 1;
+          errors := Array.concat(errors, ["Unit " # row.unitId # " already registered"]);
+        } else {
+          let code = "IMPORT-" # row.unitId # "-" # Int.toText(Time.now());
+          let inv : InviteCode = {
+            code;
+            maxUses   = 1;
+            usedCount = 0;
+            expiresAt = ?(Time.now() + 30 * 24 * 3_600_000_000_000); // 30 days
+            createdBy = msg.caller;
+            createdAt = Time.now();
+            isRevoked = false;
+          };
+          Map.add(inviteCodes, Text.compare, code, inv);
+          succeeded += 1;
+          codes := Array.concat(codes, [(row.unitId, code)]);
+        };
+      };
+    };
+    { succeeded; failed; codes; errors }
   };
 
   public query func metrics() : async { memberCount : Nat; shareLinkCount : Nat } {

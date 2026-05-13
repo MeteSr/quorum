@@ -57,6 +57,18 @@ export function idlFactory({ IDL }: { IDL: any }) {
     InvalidInput:  IDL.Text,
   });
 
+  const VendorImportRow = IDL.Record({
+    name:    IDL.Text,
+    trade:   VendorCategory,
+    contact: IDL.Text,
+  });
+
+  const VendorBulkResult = IDL.Record({
+    succeeded: IDL.Nat,
+    failed:    IDL.Nat,
+    errors:    IDL.Vec(IDL.Text),
+  });
+
   const ResultVendor    = IDL.Variant({ ok: Vendor,    err: VendorError });
   const ResultVendorJob = IDL.Variant({ ok: VendorJob, err: VendorError });
   const ResultNull      = IDL.Variant({ ok: IDL.Null,  err: VendorError });
@@ -72,7 +84,8 @@ export function idlFactory({ IDL }: { IDL: any }) {
     getAllVendors:        IDL.Func([],                                                                   [IDL.Vec(Vendor)], ["query"]),
     getVendorsByCategory: IDL.Func([VendorCategory],                                                   [IDL.Vec(Vendor)], ["query"]),
     getJobsForVendor:    IDL.Func([IDL.Text],                                                           [IDL.Vec(VendorJob)], ["query"]),
-    getExpiringCOIs:     IDL.Func([IDL.Nat],                                                            [IDL.Vec(Vendor)], ["query"]),
+    getExpiringCOIs:      IDL.Func([IDL.Nat],                                                            [IDL.Vec(Vendor)],    ["query"]),
+    bulkImportVendors:    IDL.Func([IDL.Vec(VendorImportRow)],                                          [VendorBulkResult],   []),
   });
 }
 
@@ -125,6 +138,18 @@ export type VendorError =
   | { NotFound: null }
   | { NotAuthorized: null }
   | { InvalidInput: string };
+
+export interface VendorImportRow {
+  name:    string;
+  trade:   VendorCategory;
+  contact: string;
+}
+
+export interface VendorBulkResult {
+  succeeded: bigint;
+  failed:    bigint;
+  errors:    string[];
+}
 
 // ─── Actor ────────────────────────────────────────────────────────────────────
 
@@ -230,4 +255,12 @@ export async function getExpiringCOIs(withinDays: number): Promise<Vendor[]> {
   const actor = await createActor() as any;
   if (!actor) return [];
   return actor.getExpiringCOIs(BigInt(withinDays));
+}
+
+export async function bulkImportVendors(
+  rows: VendorImportRow[]
+): Promise<VendorBulkResult> {
+  const actor = await createActor() as any;
+  if (!actor) return { succeeded: BigInt(0), failed: BigInt(rows.length), errors: ["canister not deployed"] };
+  return actor.bulkImportVendors(rows);
 }

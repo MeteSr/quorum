@@ -69,6 +69,18 @@ persistent actor Vendors {
     #InvalidInput: Text;
   };
 
+  public type VendorImportRow = {
+    name    : Text;
+    trade   : VendorCategory;
+    contact : Text;  // phone or email
+  };
+
+  public type VendorBulkResult = {
+    succeeded : Nat;
+    failed    : Nat;
+    errors    : [Text];
+  };
+
   // ─── Stable State ─────────────────────────────────────────────────────────
 
   private var vendorCounter : Nat = 0;
@@ -211,6 +223,45 @@ persistent actor Vendors {
         #ok(updated)
       };
     }
+  };
+
+  // Bulk-import vendor directory (e.g. from AppFolio). Capped at 500 rows.
+  public shared(msg) func bulkImportVendors(rows : [VendorImportRow]) : async VendorBulkResult {
+    if (Principal.isAnonymous(msg.caller)) {
+      return { succeeded = 0; failed = rows.size(); errors = ["Not authorized"] };
+    };
+    let maxRows = 500;
+    let rowsToProcess = Array.tabulate<VendorImportRow>(
+      if (rows.size() < maxRows) rows.size() else maxRows, func(i) { rows[i] }
+    );
+    var succeeded = 0;
+    var failed    = 0;
+    var errors : [Text] = [];
+    for (row in rowsToProcess.vals()) {
+      if (Text.size(row.name) == 0) {
+        failed += 1;
+        errors := Array.concat(errors, ["Row missing name"]);
+      } else {
+        let vendor : Vendor = {
+          id          = nextVendorId();
+          name        = row.name;
+          category    = row.trade;
+          phone       = row.contact;
+          email       = "";
+          website     = "";
+          notes       = "Imported via AppFolio migration";
+          reviewCount = 0;
+          ratingSum   = 0;
+          jobCount    = 0;
+          coi         = null;
+          addedBy     = msg.caller;
+          createdAt   = Time.now();
+        };
+        Map.add(vendors, Text.compare, vendor.id, vendor);
+        succeeded += 1;
+      };
+    };
+    { succeeded; failed; errors }
   };
 
   // ─── Queries ──────────────────────────────────────────────────────────────
