@@ -1050,10 +1050,10 @@ persistent actor Treasury {
     for (row in rowsToProcess.vals()) {
       if (row.amountCents == 0) {
         failed += 1;
-        errors := Array.append(errors, ["Row for unit " # row.unitId # " has zero amount"]);
+        errors := Array.concat(errors, ["Row for unit " # row.unitId # " has zero amount"]);
       } else if (Text.size(row.unitId) == 0) {
         failed += 1;
-        errors := Array.append(errors, ["Row missing unitId"]);
+        errors := Array.concat(errors, ["Row missing unitId"]);
       } else {
         let aId = nextId();
         let a : Assessment = {

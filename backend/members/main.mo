@@ -735,7 +735,7 @@ persistent actor Members {
     for (row in rowsToProcess.vals()) {
       if (Text.size(row.unitId) == 0) {
         failed += 1;
-        errors := Array.append(errors, ["Row missing unitId"]);
+        errors := Array.concat(errors, ["Row missing unitId"]);
       } else {
         // Skip if unit already has an active member
         var alreadyRegistered = false;
@@ -744,7 +744,7 @@ persistent actor Members {
         };
         if (alreadyRegistered) {
           failed += 1;
-          errors := Array.append(errors, ["Unit " # row.unitId # " already registered"]);
+          errors := Array.concat(errors, ["Unit " # row.unitId # " already registered"]);
         } else {
           let code = "IMPORT-" # row.unitId # "-" # Int.toText(Time.now());
           let inv : InviteCode = {
@@ -758,7 +758,7 @@ persistent actor Members {
           };
           Map.add(inviteCodes, Text.compare, code, inv);
           succeeded += 1;
-          codes := Array.append(codes, [(row.unitId, code)]);
+          codes := Array.concat(codes, [(row.unitId, code)]);
         };
       };
     };

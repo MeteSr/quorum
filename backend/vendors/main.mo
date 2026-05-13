@@ -240,7 +240,7 @@ persistent actor Vendors {
     for (row in rowsToProcess.vals()) {
       if (Text.size(row.name) == 0) {
         failed += 1;
-        errors := Array.append(errors, ["Row missing name"]);
+        errors := Array.concat(errors, ["Row missing name"]);
       } else {
         let vendor : Vendor = {
           id          = nextVendorId();
